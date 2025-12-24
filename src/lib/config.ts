@@ -5,7 +5,6 @@
  */
 
 // Helper to determine the dynamic WebSocket URL based on the current window location
-// This allows local development on mobile devices via LAN (e.g., 192.168.x.x)
 const getDynamicWsUrl = (userId: string) => {
     if (typeof window === 'undefined') return ''; // Server-side safety
 
@@ -16,22 +15,35 @@ const getDynamicWsUrl = (userId: string) => {
 
     // Priority 2: Dynamic Localhost/LAN Fallback
     const wsHost = window.location.hostname;
-    // Default to port 8080 for the Go Backend
-    return `ws://${wsHost}:8080/con/request?userId=${userId}`;
+
+    // Safety: Only assume :8080 if we are clearly on localhost or a private IP
+    // If we are on 'vercel.app', we shouldn't try port 8080 unless configured.
+    const isLocal = wsHost === 'localhost' || wsHost === '127.0.0.1' || wsHost.startsWith('192.168.');
+
+    if (isLocal) {
+        return `ws://${wsHost}:8080/con/request?userId=${userId}`;
+    }
+
+    // Fallback for cloud without config (likely to fail, but safer than arbitrary port)
+    console.warn("⚠️ NEXT_PUBLIC_WS_URL not set in Cloud environment. defaulting to current origin WSS.");
+    return `wss://${wsHost}/con/request?userId=${userId}`;
 };
 
 // Helper for API URL (HTTP)
 const getDynamicApiUrl = () => {
-    // 1. Server Side: Always direct to localhost backend
-    if (typeof window === 'undefined') return 'http://localhost:8080';
+    // 1. Server Side: Use Internal Env Vars or public ones
+    if (typeof window === 'undefined') {
+        return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    }
 
-    // 2. Production/Cloud: Use provided Env Var
+    // 2. Production/Cloud w/ Direct Access: Use provided Env Var to bypass proxy
     if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL;
     }
 
-    // 3. Local Development: Return empty string to usage relative path (e.g. "/con/make-match")
-    // This allows Next.js 'rewrites' to proxy the request => No CORS errors.
+    // 3. Proxy Mode (Cleanest for CORS):
+    // Return empty string to force relative path (e.g. "/con/make-match")
+    // This allows Next.js 'rewrites' (next.config.ts) to handle the routing.
     return '';
 };
 

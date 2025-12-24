@@ -250,6 +250,10 @@ function ArenaContent() {
             if (subtype === 'consent') {
                 console.log("Partner consented to reveal!");
                 setPartnerConsented(true);
+                // Optimistic Instant Match: If I have also consented, we match immediately!
+                if (myConsent) {
+                    setMatchConfirmed(true);
+                }
             }
 
             if (subtype === 'decline') {
@@ -258,25 +262,20 @@ function ArenaContent() {
                 setPartnerConsented(false); // Override consent if they changed mind or race condition
             }
         }
-    }, [lastMessage, matchData, timeRemaining, handleNextMatch]);
+    }, [lastMessage, matchData, timeRemaining, handleNextMatch, myConsent]); // Added myConsent dependency
 
     const handleDecline = async () => {
-        // 1. Notify partner via P2P Signal (Fastest)
-        sendMessage({
-            type: 'signal',
-            subtype: 'decline',
-            data: null
-        } as any);
+        // Silent Skip: We do NOT notify the partner via P2P signal anymore.
+        // They will wait until the timer expires.
 
-        // 2. Notify Backend via Redis (Persistence)
-        // This helps if WS fails - the partner's polling might pick up the "no" status (depending on backend impl)
+        // Notify Backend via Redis (Persistence)
         if (sessionId && matchData && (matchData as any).roomid) {
             try {
                 const roomID = (matchData as any).roomid;
                 fetch(`${config.getApiUrl()}/con/make-match?userid=${sessionId}&roomid=${roomID}&match=no`)
                     .catch(e => console.error("Backend decline sync failed", e));
             } catch (e) {
-                // Ignore errors here, we are leaving anyway
+                // Ignore errors here
             }
         }
     };
@@ -299,6 +298,11 @@ function ArenaContent() {
             subtype: 'consent',
             data: null
         } as any);
+
+        // Optimistic Instant Match: If partner already consented, we match immediately!
+        if (partnerConsented) {
+            setMatchConfirmed(true);
+        }
 
         // 2. Call Backend to persist decision
         // Backend Endpoint: /con/make-match?userid=...&roomid=...&match=yes
