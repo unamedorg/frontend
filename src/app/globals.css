@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --color-primary: #ffffff;
+  --color-secondary: #333333;
+  --color-accent: #3b82f6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-display: var(--font-outfit), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+
+  /* Mobile Optimizations */
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  /* Prevents pull-to-refresh reload */
+  touch-action: manipulation;
+  /* Improves tap response, disables double-tap zoom */
+  min-height: 100dvh;
+  /* Proper full height on mobile browsers */
+  height: 100dvh;
+  /* Force height to match viewport exactly, preventing scroll on body */
+  width: 100vw;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar for sleekness */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #666;
+  border-radius: 5px;
+  border: 2px solid #000;
+  /* Padding around thumb */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
