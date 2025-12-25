@@ -3,7 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   async rewrites() {
     // Allows Proxying to backend to avoid CORS if Env Vars are set to use Relative Paths
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    // Hardcoded fallback to Ensure Cloud works even if Env Vars flake out
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'https://backend-49yx.onrender.com';
 
     return [
       {
