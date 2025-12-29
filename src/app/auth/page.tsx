@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, ArrowRight, CheckCircle2, AlertCircle, Instagram, Linkedin } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
+import { Suspense } from "react";
 
-export default function AuthPage() {
+function AuthContent() {
     const { user: authUser, loading: authLoading } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -433,5 +434,17 @@ export default function AuthPage() {
                 </AnimatePresence>
             </div>
         </div>
+    );
+}
+
+export default function AuthPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-black">
+                <Loader2 className="w-8 h-8 text-white animate-spin" />
+            </div>
+        }>
+            <AuthContent />
+        </Suspense>
     );
 }
