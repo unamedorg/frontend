@@ -55,6 +55,7 @@ export function CircularTimer({ timeRemaining, totalTime = 180 }: CircularTimerP
                     className={`fill-none transition-colors duration-500 ${isCritical ? 'stroke-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'stroke-white'}`}
                     strokeWidth="4"
                     strokeDasharray={circumference}
+                    initial={{ strokeDashoffset: circumference }}
                     animate={{ strokeDashoffset: dashOffset }}
                     transition={{ duration: 1, ease: "linear" }}
                     strokeLinecap="round"

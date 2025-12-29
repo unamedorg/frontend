@@ -5,7 +5,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 interface TimerContextType {
     timeRemaining: number;
     isActive: boolean;
-    startTimer: () => void;
+    startTimer: (seconds?: number) => void;
     resetTimer: () => void;
     endTimer: () => void;
     formatTime: (seconds: number) => string;
@@ -20,7 +20,32 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     const [isActive, setIsActive] = useState(false);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    const startTimer = useCallback(() => {
+    const startTimer = useCallback((initialSeconds?: number) => {
+        // Mode 1: Force Start (Reset + Start)
+        if (initialSeconds !== undefined) {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            setIsActive(true);
+            setTimeRemaining(initialSeconds);
+
+            const startTime = Date.now();
+            const endTime = startTime + initialSeconds * 1000;
+
+            intervalRef.current = setInterval(() => {
+                const now = Date.now();
+                const left = Math.ceil((endTime - now) / 1000);
+
+                if (left <= 0) {
+                    setTimeRemaining(0);
+                    setIsActive(false);
+                    if (intervalRef.current) clearInterval(intervalRef.current);
+                } else {
+                    setTimeRemaining(left);
+                }
+            }, 100);
+            return;
+        }
+
+        // Mode 2: Resume (Standard)
         if (isActive) return;
         setIsActive(true);
 
@@ -38,7 +63,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
             } else {
                 setTimeRemaining(left);
             }
-        }, 100); // 100ms precision for smoother potential UI updates
+        }, 100);
     }, [isActive, timeRemaining]);
 
     const resetTimer = useCallback(() => {

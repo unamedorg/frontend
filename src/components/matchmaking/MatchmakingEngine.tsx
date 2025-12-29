@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useWebSocket } from '@/providers/WebSocketProvider';
 import { useTimer } from '@/providers/TimerProvider';
 import { CampusRadar } from '@/components/matchmaking/CampusRadar';
+import { AlertCircle } from 'lucide-react';
 
 type MatchState = 'idle' | 'searching' | 'matched' | 'timeout' | 'error';
 
@@ -21,11 +22,12 @@ export function MatchmakingEngine({ onMatchFound, collegeId = "global", autoStar
     const [status, setStatus] = useState<MatchState>(autoStart ? 'searching' : 'idle');
     const [searchMode, setSearchMode] = useState<'college' | 'random'>('college');
     const [activeCollegeId, setActiveCollegeId] = useState(collegeId);
+    const [retryCount, setRetryCount] = useState(0);
 
     // Load persistence
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('echo_college_id');
+            const saved = localStorage.getItem('arena_filter');
             if (saved) setActiveCollegeId(saved);
         }
     }, []);
@@ -33,29 +35,20 @@ export function MatchmakingEngine({ onMatchFound, collegeId = "global", autoStar
     // Save persistence when it changes
     useEffect(() => {
         if (typeof window !== 'undefined' && activeCollegeId !== 'global') {
-            localStorage.setItem('echo_college_id', activeCollegeId);
+            localStorage.setItem('arena_filter', activeCollegeId);
         }
     }, [activeCollegeId]);
 
     // Trigger search
     const startSearch = useCallback(() => {
-        // Backend Architecture: Connecting to the socket IS the match request.
-        // Force connection if we are not connected.
-        if (!isConnected) {
-            connect();
-        } else {
-            // If we are already connected but restarting search (e.g. next match),
-            // ensure we are in a clean state.
-            // Note: Ideally, we should disconnect and reconnect to re-enter the queue 
-            // if the backend requires a fresh connection for a new match request.
-            // Based on p2plogic, a fresh connection is indeed the standard way to "join" the waiting list.
-            // So, let's force a reconnect if we are already connected but starting a search manually.
-            // However, to avoid 'flicker', we rely on the flow: Disconnect -> Search -> Connect.
-        }
-
-        resetTimer(); // Ensure timer starts fresh for new match
+        // Reset flags to allow immediate connection
+        resetTimer();
         setStatus('searching');
         setSearchMode('college');
+
+        // FORCE A FRESH UPLINK: The fastest way to find a partner is a fresh socket.
+        // This flushes any stale sessions tied to the old socket.
+        connect();
 
         // Fallback visual transition
         setTimeout(() => {
@@ -68,25 +61,36 @@ export function MatchmakingEngine({ onMatchFound, collegeId = "global", autoStar
             });
         }, 15000);
 
-    }, [isConnected, connect, resetTimer]);
+    }, [connect, resetTimer]);
 
     // Auto-Start Logic and Retry Mechanism
     useEffect(() => {
-        if (autoStart) {
-            // If scanning but disconnected, RETRY immediately.
-            // This handles "Ghost Rooms" where backend closes connection instantly.
+        if (autoStart && status !== 'error') {
+            // If scanning but disconnected, RETRY with limit
             if (!isConnected) {
-                console.log("🔄 Auto-starting/Retrying search...");
-                // Small delay to prevent tight loop if server is down
+                if (retryCount > 10) {
+                    setStatus('error');
+                    console.error("⛔ Matchmaking paused: Too many connection failures.");
+                    return;
+                }
+
+                console.log(`🔄 Auto-starting/Retrying search... (${retryCount}/10)`);
                 const timer = setTimeout(() => {
+                    setRetryCount(prev => prev + 1);
                     connect();
-                }, 500);
+                }, 1000);
                 return () => clearTimeout(timer);
             }
+
+            // On successful connection, reset retry count
+            if (isConnected && retryCount > 0) {
+                setRetryCount(0);
+            }
+
             // Ensure timer is fresh
             resetTimer();
         }
-    }, [autoStart, isConnected, connect, resetTimer]);
+    }, [autoStart, isConnected, connect, resetTimer, retryCount]);
 
     // Handle incoming messages
     useEffect(() => {
@@ -122,6 +126,31 @@ export function MatchmakingEngine({ onMatchFound, collegeId = "global", autoStar
                 <p className="mt-8 font-mono text-sm text-white/50 animate-pulse">
                     SCANNING_{searchMode.toUpperCase()}...
                 </p>
+                {retryCount > 2 && (
+                    <p className="mt-2 text-[10px] text-amber-500/50 font-mono">
+                        Slow connection reported. Optimizing tunnel...
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    if (status === 'error') {
+        return (
+            <div className="flex flex-col items-center justify-center p-10 text-center">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
+                    <AlertCircle className="w-8 h-8 text-red-500" />
+                </div>
+                <h3 className="text-white font-display font-bold text-xl mb-2">Arena Unavailable</h3>
+                <p className="text-neutral-500 text-sm max-w-xs mb-8">
+                    We're having trouble connecting to the Arena servers. Please try again in a few minutes.
+                </p>
+                <button
+                    onClick={() => { setRetryCount(0); setStatus('searching'); startSearch(); }}
+                    className="px-6 py-2 bg-white text-black rounded-full font-bold text-sm hover:bg-neutral-200 transition-colors"
+                >
+                    RETRY CONNECTION
+                </button>
             </div>
         );
     }

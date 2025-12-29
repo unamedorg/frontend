@@ -56,7 +56,7 @@ export function ChatInterface({ matchData, onTimeout }: ChatInterfaceProps) {
             if (onTimeout) {
                 console.warn("⚠️ User AFK detected (15s). Ending match.");
                 setMessages(prev => [...prev, {
-                    id: 'timeout-msg',
+                    id: `timeout-${Date.now()}`,
                     text: "⛔ YOU WERE SILENT: Disconnecting due to inactivity...",
                     sender: 'system',
                     timestamp: Date.now()
@@ -221,7 +221,7 @@ export function ChatInterface({ matchData, onTimeout }: ChatInterfaceProps) {
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
                         placeholder="Type a message..."
-                        className="w-full bg-neutral-900/50 border border-white/10 rounded-full pl-5 pr-12 py-3 text-sm text-white focus:outline-none focus:border-white/30 focus:bg-neutral-900 transition-all font-body placeholder:text-neutral-600"
+                        className="w-full bg-neutral-900/50 border border-white/10 rounded-full pl-5 pr-12 py-3 text-base text-white focus:outline-none focus:border-white/30 focus:bg-neutral-900 transition-all font-body placeholder:text-neutral-600"
                     />
                     <button
                         type="submit"

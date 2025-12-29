@@ -3,121 +3,172 @@
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
 import { wsMessage, wsResponse, WebSocketContextType } from '@/types/socket';
 import { config } from '@/lib/config';
+import { useAuth } from '@/providers/AuthProvider';
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
 const MAX_RECONNECT_DELAY = 5000;
+const HEARTBEAT_INTERVAL = 30000;
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
+    const { user, getToken } = useAuth();
     const [isConnected, setIsConnected] = useState(false);
     const [lastMessage, setLastMessage] = useState<wsResponse | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(null);
+
     const ws = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
     const reconnectAttempts = useRef(0);
-
-    // Use a ref to hold the connect function to allow safe recursion/timeout calls
-    const connectRef = useRef<() => void>(() => { });
-    const userIdRef = useRef<string>("");
-
-    useEffect(() => {
-        // Generate or load UserID once
-        if (typeof window !== 'undefined') {
-            let id = localStorage.getItem("echo_user_id");
-            if (!id) {
-                id = "user_" + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem("echo_user_id", id);
-            }
-            userIdRef.current = id;
-        }
-    }, []);
-
     const isExplicitDisconnect = useRef(false);
-    // Persist session suffix across reconnects to maintain identity (Redis consistency)
-    const sessionSuffixRef = useRef(Math.random().toString(36).substr(2, 5));
 
-    const connect = useCallback(() => {
-        // Vital: Reset this flag so we can auto-reconnect if connection drops accidentally
+    // Ref to hold the current connect function to avoid dependency cycles in effects
+    const connectRef = useRef<() => void>(() => { });
+
+    const connect = useCallback(async () => {
         isExplicitDisconnect.current = false;
 
-        // Prevent multiple connection attempts
+        // specific check to avoid redundant connections
         if (ws.current?.readyState === WebSocket.OPEN || ws.current?.readyState === WebSocket.CONNECTING) {
-            console.log("⚠️ Connection already in progress or active. Skipping.");
             return;
         }
 
-        // Backend expects userId in query: /con/request?userId=...
-        // APPEND RANDOM SUFFIX to ensure unique session per tab. 
-        // This fixes the "Same User ID" collision when testing with multiple tabs.
-        const uniqueSessionId = userIdRef.current ? `${userIdRef.current}-${sessionSuffixRef.current}` : `anon-${sessionSuffixRef.current}`;
+        if (!user) {
+            console.log("WAIT: User not authenticated yet.");
+            return;
+        }
 
-        const url = config.getWsUrl(uniqueSessionId);
+        try {
+            // SPEED OPTIMIZATION: Use cached token if available (false)
+            // This avoids a ~300ms network roundtrip to Firebase on every connect.
+            const token = await user.getIdToken();
+            if (!token) throw new Error("No token available");
 
-        console.log("🔌 Connecting to WS:", url);
-        ws.current = new WebSocket(url);
-        setSessionId(uniqueSessionId);
+            // Use strict user.uid for identity to allow session re-establishment on the backend
+            const uniqueId = user.uid;
 
-        ws.current.onopen = () => {
-            console.log('✅ Connected to EchoArena');
-            setIsConnected(true);
-            reconnectAttempts.current = 0;
-        };
+            // Construct URL
+            const url = config.getWsUrl(uniqueId);
+            const filter = localStorage.getItem("arena_filter") || "random";
+            const finalUrl = `${url}&token=${token}&filter=${filter}`;
 
-        ws.current.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
+            console.log("🔌 Connecting to EchoArena...");
 
-                // Backend Quirk: Sends { "message": "ready" } (no type) for Producer waiting state
-                if ((data as any).message === "ready") {
-                    console.log("Server Ready / Waiting for partner...");
-                    return;
+            ws.current = new WebSocket(finalUrl);
+            setSessionId(uniqueId);
+
+            ws.current.onopen = () => {
+                console.log('✅ Connected securely.');
+                setIsConnected(true);
+                reconnectAttempts.current = 0; // Reset backoff on success
+            };
+
+            ws.current.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // Filter out internal messages or handle 'ready' specifically if needed
+                    if ((data as any).message === "ready") {
+                        // Keep alive / ready signal
+                        return;
+                    }
+                    setLastMessage(data);
+                } catch (e) {
+                    console.error('Failed to parse WS message:', e);
+                }
+            };
+
+            ws.current.onclose = (event) => {
+                console.log(`❌ Socket closed: ${event.code} ${event.reason}`);
+                setIsConnected(false);
+                ws.current = null;
+
+                if (isExplicitDisconnect.current) {
+                    return; // User manually disconnected, do not reconnect
                 }
 
-                setLastMessage(data);
-            } catch (e) {
-                console.log('Received raw:', event.data, e);
-            }
-        };
+                // Optimized Backoff: Instant retry (100ms) for first failure, then exponential
+                let delay = 100;
+                if (reconnectAttempts.current > 0) {
+                    delay = Math.min(500 * Math.pow(2, reconnectAttempts.current), MAX_RECONNECT_DELAY);
+                }
 
-        ws.current.onclose = () => {
-            console.log('❌ Disconnected');
-            setIsConnected(false);
+                console.log(`...Reconnecting in ${delay}ms`);
 
-            if (isExplicitDisconnect.current) {
-                console.log("Disconnected explicitly. Not reconnecting.");
-                return;
-            }
+                reconnectTimeout.current = setTimeout(() => {
+                    reconnectAttempts.current++;
+                    connectRef.current();
+                }, delay);
+            };
 
-            // Aggressive Reconnection logic
-            // Start very fast (250ms) to recover from minor flickers (e.g. mobile data switch)
-            const delay = Math.min(250 * Math.pow(2, reconnectAttempts.current), MAX_RECONNECT_DELAY);
+            ws.current.onerror = (err) => {
+                console.error('WS Error:', err);
+                // onerror usually precedes onclose, so we let onclose handle the retry logic
+                ws.current?.close();
+            };
+
+        } catch (err) {
+            console.error("WS Connect failed:", err);
+            // If token fetch fails, retry slower
             reconnectTimeout.current = setTimeout(() => {
-                reconnectAttempts.current++;
-                // Safe access via ref
                 connectRef.current();
-            }, delay);
-        };
+            }, 5000);
+        }
+    }, [user]);
 
-        ws.current.onerror = (err) => {
-            console.error('WS Error:', err);
-            // Close will trigger onclose
-            ws.current?.close();
-        };
+    const disconnect = useCallback(() => {
+        isExplicitDisconnect.current = true;
+        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+        reconnectAttempts.current = 0;
+
+        if (ws.current) {
+            ws.current.close();
+            ws.current = null;
+        }
+        setIsConnected(false);
+        setLastMessage(null);
     }, []);
 
-    // ROBUSTNESS: Handle Network & Visibility Changes
+    const sendMessage = useCallback((msg: wsMessage) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+            ws.current.send(JSON.stringify(msg));
+        } else {
+            console.warn('⚠️ Cannot send: WS not connected');
+        }
+    }, []);
+
+    // Keep connectRef up to date
+    useEffect(() => {
+        connectRef.current = connect;
+    }, [connect]);
+
+    // Initial connection trigger when user becomes available
+    useEffect(() => {
+        if (user && !isConnected) {
+            connect();
+        }
+        return () => {
+            // Cleanup on unmount handled by disconnect? 
+            // Ideally we stay connected unless component unmounts.
+            // But strictly:
+            // disconnect(); 
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user]); // Only trigger when user state changes (login)
+
+    // Network & Visibility Handling for "Fastest Re-establishment"
     useEffect(() => {
         const handleOnline = () => {
-            console.log("🌐 Network Online detected. Reconnecting immediately...");
-            // Reset attempts to allow fast reconnect
-            reconnectAttempts.current = 0;
-            connectRef.current();
+            console.log("🌐 Network Online. Attempting immediate reconnect...");
+            if (!isConnected) {
+                reconnectAttempts.current = 0;
+                connectRef.current();
+            }
         };
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                console.log("👁️ Tab Visible. Checking connection...");
+                // If socket is dead/closed, try to revive it immediately
                 if (!ws.current || ws.current.readyState === WebSocket.CLOSED) {
-                    console.log("...Connection dead. Reconnecting.");
+                    console.log("👁️ Tab Visible. Reviving connection...");
                     reconnectAttempts.current = 0;
                     connectRef.current();
                 }
@@ -131,46 +182,23 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             window.removeEventListener('online', handleOnline);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, []);
+    }, [isConnected]);
 
-    // Update ref whenever connect changes
-    useEffect(() => {
-        connectRef.current = connect;
-    }, [connect]);
-
-    const disconnect = useCallback(() => {
-        isExplicitDisconnect.current = true; // Flag to stop auto-reconnect
-        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-        reconnectAttempts.current = 0;
-        ws.current?.close();
-        ws.current = null;
-        setLastMessage(null); // Clear stale message
-    }, []);
-
-    const sendMessage = useCallback((msg: wsMessage) => {
-        if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify(msg));
-        } else {
-            console.warn('⚠️ Cannot send: WS not connected');
-        }
-    }, []);
-
-    // HEARTBEAT LOGIC: Keep connection alive on mobile networks
+    // Heartbeat
     useEffect(() => {
         const interval = setInterval(() => {
             if (ws.current?.readyState === WebSocket.OPEN) {
-                // Send a lightweight packet to update NAT tables and detect dead sockets
                 ws.current.send(JSON.stringify({ type: 'heartbeat' }));
             }
-        }, 30000); // 30s Heartbeat
+        }, HEARTBEAT_INTERVAL);
 
         return () => clearInterval(interval);
     }, []);
 
-    const [sessionId, setSessionId] = useState<string | null>(null);
+    const tabId = useRef(Math.random().toString(36).substring(7)).current;
 
     return (
-        <WebSocketContext.Provider value={{ isConnected, sendMessage, lastMessage, connect, disconnect, sessionId }}>
+        <WebSocketContext.Provider value={{ isConnected, sendMessage, lastMessage, connect, disconnect, sessionId, tabId }}>
             {children}
         </WebSocketContext.Provider>
     );
