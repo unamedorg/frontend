@@ -36,7 +36,9 @@ function ArenaContent() {
     const [handshakeStatus, setHandshakeStatus] = useState<'idle' | 'verifying' | 'verified' | 'failed'>('idle');
     const [pendingMatchData, setPendingMatchData] = useState<wsResponse | null>(null);
 
-
+    // Phase Management
+    const [arenaPhase, setArenaPhase] = useState<'chat' | 'vibe' | 'reveal_decision' | 'reveal_result'>('chat');
+    const [phaseTimer, setPhaseTimer] = useState(0);
 
     // Refs
     const isConnectedRef = useRef(isConnected);
@@ -69,9 +71,13 @@ function ArenaContent() {
         setMatchData(null);
         setHandshakeStatus('idle');
         setPendingMatchData(null);
+        setArenaPhase('chat');
+        setVibeSubmitted(false);
+        setQueuedKarma(0);
         setMatchConfirmed(false);
         setHasRated(false);
         setPartnerDeclined(false);
+        setPartnerProfile(null);
     }, [isConnected, sendMessage, disconnect, resetTimer]);
 
     // Cleanup on unmount (navigation away)
@@ -84,12 +90,12 @@ function ArenaContent() {
                         username: 'system',
                         timestamp: Date.now()
                     });
-                    console.log("👋 Navigated away. Sent leave signal.");
                 }
+                resetTimer(); // Reset global timer state when leaving
                 disconnect();
             }
         };
-    }, []);
+    }, [resetTimer]);
 
     const handleBeforeUnload = () => {
         if (isConnected) {
@@ -151,15 +157,22 @@ function ArenaContent() {
     useEffect(() => {
         if (handshakeStatus !== 'verifying' || !tabId) return;
 
-        console.log("💓 Starting Handshake Pulse...");
-        const pulseInterval = setInterval(() => {
+        console.log("💓 Starting Handshake Pulse (Turbo Method)...");
+
+        const sendPulse = () => {
             sendMessage({
                 type: 'signal',
                 subtype: 'handshake',
                 sender: tabId,
                 data: null
             } as any);
-        }, 250); // Pulse every 250ms
+        };
+
+        // 1. Fire immediately (0ms delay)
+        sendPulse();
+
+        // 2. Fire rapidly (75ms interval) to catch them ASAP
+        const pulseInterval = setInterval(sendPulse, 75);
 
         return () => {
             clearInterval(pulseInterval);
@@ -173,12 +186,16 @@ function ArenaContent() {
         if (!lastMessage) return;
 
         // Partner disconnected
-        if (lastMessage.type === 'leave' && matchData) {
-            if (timeRemainingRef.current > 0) {
-                handleNextMatch();
-            } else {
-                console.log("Partner left during Reveal Phase -> Treated as Decline.");
-                setPartnerDeclined(true);
+        if (lastMessage.type === 'leave') {
+            if (matchData || pendingMatchData || handshakeStatus === 'verifying') {
+                console.log("Partner left -> Resetting immediately.");
+                if (arenaPhase === 'reveal_result' || arenaPhase === 'reveal_decision') {
+                    // If late stage, valid decline
+                    setPartnerDeclined(true);
+                } else {
+                    // If early or mid-chat, just next match
+                    handleNextMatch();
+                }
             }
         }
 
@@ -205,7 +222,24 @@ function ArenaContent() {
                     setMatchData(pendingMatchData);
                     setPendingMatchData(null);
                     setHandshakeStatus('verified');
+                    setArenaPhase('chat');
+                    setVibeSubmitted(false);
+                    setQueuedKarma(0);
                     startTimer(180);
+
+                    // 📡 RE-ESTABLISH: If we already consented in a previous session, inform partner
+                    if (myConsent) {
+                        const myProfile = {
+                            instagram: typeof window !== 'undefined' ? localStorage.getItem("arena_instagram") || "@user" : "@user",
+                            topTrack: typeof window !== 'undefined' ? localStorage.getItem("arena_top_track") || "Midnight City - M83" : "Midnight City - M83"
+                        };
+                        sendMessage({
+                            type: 'signal',
+                            subtype: 'consent',
+                            sender: tabId,
+                            data: myProfile
+                        } as any);
+                    }
                 } else if (handshakeStatus === 'verifying') {
                     setHandshakeStatus('verified');
                 }
@@ -216,14 +250,34 @@ function ArenaContent() {
                 if (pendingMatchData) {
                     setMatchData(pendingMatchData);
                     setPendingMatchData(null);
+                    setArenaPhase('chat');
+                    setVibeSubmitted(false);
+                    setQueuedKarma(0);
                     startTimer(180);
                 }
                 setHandshakeStatus('verified');
+
+                // 📡 RE-ESTABLISH: Inform partner about our current consent status
+                if (myConsent) {
+                    const myProfile = {
+                        instagram: typeof window !== 'undefined' ? localStorage.getItem("arena_instagram") || "@user" : "@user",
+                        topTrack: typeof window !== 'undefined' ? localStorage.getItem("arena_top_track") || "Midnight City - M83" : "Midnight City - M83"
+                    };
+                    sendMessage({
+                        type: 'signal',
+                        subtype: 'consent',
+                        sender: tabId,
+                        data: myProfile
+                    } as any);
+                }
             }
 
             if (subtype === 'consent') {
-                console.log("Partner consented to reveal!");
+                console.log("Partner consented to reveal!", signal.data);
                 setPartnerConsented(true);
+                if (signal.data) {
+                    setPartnerProfile(signal.data as any);
+                }
                 if (myConsent) setMatchConfirmed(true);
             }
 
@@ -232,44 +286,105 @@ function ArenaContent() {
                 setPartnerDeclined(true);
                 setPartnerConsented(false);
             }
-        }
-    }, [lastMessage, matchData, handleNextMatch, myConsent, pendingMatchData, sendMessage, tabId]);
 
-    const handleDecline = async () => {
-        if (sessionId && matchData && (matchData as any).roomid) {
-            try {
-                if (!user) return;
-                const token = await user.getIdToken();
-                const roomID = (matchData as any).roomid;
-                await fetch(`${config.getApiUrl()}/con/make-match?userid=${sessionId}&roomid=${roomID}&match=no`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-            } catch (e) {
-                // Ignore errors here
+            if (subtype === 'status_request') {
+                console.log("Partner requested status. Replying if consented...");
+                if (myConsent) {
+                    const myProfile = {
+                        instagram: typeof window !== 'undefined' ? localStorage.getItem("arena_instagram") || "@user" : "@user",
+                        topTrack: typeof window !== 'undefined' ? localStorage.getItem("arena_top_track") || "Midnight City - M83" : "Midnight City - M83"
+                    };
+                    sendMessage({
+                        type: 'signal',
+                        subtype: 'consent',
+                        sender: tabId,
+                        data: myProfile
+                    } as any);
+                }
             }
         }
+    }, [lastMessage, matchData, handleNextMatch, myConsent, pendingMatchData, sendMessage, tabId, arenaPhase]);
+
+    // ------------------------------------------------------------
+    // 🚦 PHASE MANAGEMENT (Strict 10s Steps)
+    // ------------------------------------------------------------
+    // State to track user actions within phases
+    const [vibeSubmitted, setVibeSubmitted] = useState(false);
+    const [partnerProfile, setPartnerProfile] = useState<{ instagram?: string; topTrack?: string } | null>(null);
+
+    // Timer Tick for Phases
+    useEffect(() => {
+        if (arenaPhase === 'chat') return; // Handled by main timer
+
+        if (phaseTimer > 0) {
+            const timer = setInterval(() => setPhaseTimer(prev => prev - 1), 1000);
+            return () => clearInterval(timer);
+        } else {
+            // Phase Transitions on Timeout
+            if (arenaPhase === 'vibe') {
+                console.log("⌛ Vibe Phase Ended -> Moving to Reveal Decision");
+                setArenaPhase('reveal_decision');
+                setPhaseTimer(10);
+                // 📡 Broadcast status request to catch any early consents from partner
+                sendMessage({
+                    type: 'signal',
+                    subtype: 'status_request',
+                    sender: tabId,
+                    data: null
+                } as any);
+            } else if (arenaPhase === 'reveal_decision') {
+                console.log("⌛ Decision Phase Ended -> Showing Results");
+                setArenaPhase('reveal_result');
+                // Check match immediately upon phase end
+                if (myConsent && partnerConsented) {
+                    setMatchConfirmed(true);
+                }
+            }
+        }
+    }, [arenaPhase, phaseTimer, myConsent, partnerConsented]);
+
+    // Initial Trigger from Chat Timer
+    useEffect(() => {
+        if (timeRemaining === 0 && arenaPhase === 'chat' && matchData && handshakeStatus === 'verified') {
+            console.log("⌛ Chat Time Up -> Starting Vibe Phase");
+            setArenaPhase('vibe');
+            setPhaseTimer(10);
+        }
+    }, [timeRemaining, arenaPhase, matchData, handshakeStatus]);
+
+
+    // ------------------------------------------------------------
+    // 💖 VIBE CHECK (Phase 1)
+    // ------------------------------------------------------------
+    const [queuedKarma, setQueuedKarma] = useState(0);
+
+    const handleVibeSubmit = (score: number) => {
+        console.log("⭐ Vibe Recorded (Queued):", score);
+        setQueuedKarma(score);
+        setVibeSubmitted(true);
+        // We DO NOT advance phase. We wait for timer.
     };
 
-    const handleExit = () => {
-        handleDecline();
-        setTimeout(() => {
-            handleNextMatch();
-            router.push('/');
-        }, 300);
-    };
-
+    // ------------------------------------------------------------
+    // 🔓 REVEAL DECISION (Phase 2)
+    // ------------------------------------------------------------
     const handleConsent = async () => {
         setMyConsent(true);
+
+        // Prepare Profile Data to Share
+        const myProfile = {
+            instagram: typeof window !== 'undefined' ? localStorage.getItem("arena_instagram") || "@user" : "@user",
+            topTrack: typeof window !== 'undefined' ? localStorage.getItem("arena_top_track") || "Midnight City - M83" : "Midnight City - M83"
+        };
+
         sendMessage({
             type: 'signal',
             subtype: 'consent',
-            data: null
+            sender: tabId,
+            data: myProfile // 📤 Sending my profile to partner!
         } as any);
 
-        if (partnerConsented) {
-            setMatchConfirmed(true);
-        }
-
+        // Sync "Yes" to backend immediately (Intent is recorded)
         if (sessionId && matchData && (matchData as any).roomid) {
             try {
                 if (!user) return;
@@ -278,19 +393,54 @@ function ArenaContent() {
                 await fetch(`${config.getApiUrl()}/con/make-match?userid=${sessionId}&roomid=${roomID}&match=yes`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                console.log("✅ Backend notified of consent (matched: yes).");
             } catch (e) {
                 console.error("Backend sync failed", e);
             }
         }
     };
 
-    // Poll for Match Confirmation
+    // ------------------------------------------------------------
+    // 🤝 FINAL SYNC (Phase 3)
+    // ------------------------------------------------------------
+    // Send Karma when we transition to results phase, regardless of mutual match reveal
     useEffect(() => {
+        if (matchConfirmed && arenaPhase === 'reveal_result' && queuedKarma !== 0 && matchData && (matchData as any).roomid && user) {
+            const syncKarma = async () => {
+                try {
+                    const token = await user.getIdToken();
+                    const res = await fetch(`${config.getApiUrl()}/con/update-karma`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            roomid: (matchData as any).roomid,
+                            karma: queuedKarma
+                        })
+                    });
+                    if (res.ok) {
+                        console.log("✅ Karma Synced (Mutual Match Confirmed)");
+                        setQueuedKarma(0);
+                    }
+                } catch (e) {
+                    console.error("Karma network error", e);
+                }
+            };
+            syncKarma();
+        }
+    }, [arenaPhase, matchConfirmed, queuedKarma, matchData, user]);
+
+    // Poll for Backend Match Confirmation ONLY in result phase (or late decision)
+    useEffect(() => {
+        // Only pool if we consented and valid session
         if (!myConsent || !matchData || !(matchData as any).roomid || !sessionId) return;
+
+        // Optimization: Only poll if we don't know the result yet
         if (matchConfirmed) return;
 
         const interval = setInterval(async () => {
+            // ... (Keep existing polling logic, it's fine)
             try {
                 if (!user) return;
                 const token = await user.getIdToken();
@@ -310,54 +460,23 @@ function ArenaContent() {
                 console.error("Polling check-match failed", e);
             }
         }, 1500);
-
         return () => clearInterval(interval);
     }, [myConsent, matchConfirmed, matchData, sessionId, user]);
 
-
-    const scenario = "Topic: If you could time travel to any concert in history, which one and why? You have 180s to convince the other person to come with you.";
-
-    // Karma & Deferred Sending
-    const [queuedKarma, setQueuedKarma] = useState(0);
-
-    const handleKarma = (score: number) => {
-        console.log("⭐ Vibe Check Recorded (Queued):", score);
-        setQueuedKarma(score);
-        setHasRated(true);
-    };
-
-    // Auto-sync Karma once Match is Confirmed
-    useEffect(() => {
-        if (matchConfirmed && queuedKarma !== 0 && matchData && (matchData as any).roomid && user) {
-            const syncKarma = async () => {
-                try {
-                    const token = await user.getIdToken();
-                    const res = await fetch(`${config.getApiUrl()}/con/update-karma`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            roomid: (matchData as any).roomid,
-                            karma: queuedKarma
-                        })
-                    });
-
-                    if (res.ok) {
-                        console.log("✅ Karma Synced (Mutual Match Confirmed)");
-                        setQueuedKarma(0);
-                    } else {
-                        const err = await res.json().catch(() => ({}));
-                        console.error("❌ Karma Sync Failed:", res.status, err.error);
-                    }
-                } catch (e) {
-                    console.error("❌ Karma Network Error:", e);
-                }
-            };
-            syncKarma();
+    const handleExit = useCallback(() => {
+        if (isConnected) {
+            sendMessage({
+                type: 'leave',
+                username: 'system',
+                timestamp: Date.now()
+            });
         }
-    }, [matchConfirmed, queuedKarma, matchData, user]);
+        resetTimer();
+        disconnect();
+        router.push('/');
+    }, [isConnected, sendMessage, disconnect, router, resetTimer]);
+
+    const scenario = (matchData as any)?.topic || "Mission: Get to know your partner.";
 
     return (
         <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-black text-white p-4 overflow-hidden">
@@ -455,9 +574,12 @@ function ArenaContent() {
                                 <ChatInterface matchData={matchData} onTimeout={handleNextMatch} />
                             </div>
                             {/* Bottom Sheet Control */}
-                            {timeRemaining > 0 && (
+                            {/* Bottom Sheet Control */}
+                            {arenaPhase !== 'chat' && (
                                 <div className="text-center text-xs text-neutral-500 font-mono animate-pulse">
-                                    CONNECTION SECURE. TIME REMAINING: {timeRemaining}s
+                                    {arenaPhase === 'vibe' && "PHASE: VIBE CHECK"}
+                                    {arenaPhase === 'reveal_decision' && "PHASE: DECISION PROTOCOL"}
+                                    {arenaPhase === 'reveal_result' && "PHASE: MISSION OUTCOME"}
                                 </div>
                             )}
                         </motion.div>
@@ -465,17 +587,21 @@ function ArenaContent() {
                 </AnimatePresence>
 
                 {/* Reveal Phase Logic */}
-                {timeRemaining === 0 && (
+                {arenaPhase !== 'chat' && (
                     <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
                         <AnimatePresence mode="wait">
-                            {!hasRated ? (
+                            {arenaPhase === 'vibe' ? (
                                 <motion.div
                                     key="vibe-check"
                                     initial={{ opacity: 0, scale: 0.9 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, y: -20 }}
                                 >
-                                    <VibeCheck onRate={handleKarma} />
+                                    <VibeCheck
+                                        onRate={handleVibeSubmit}
+                                        submitted={vibeSubmitted}
+                                        timeLeft={phaseTimer}
+                                    />
                                 </motion.div>
                             ) : (
                                 <RevealCard
@@ -485,13 +611,15 @@ function ArenaContent() {
                                     partnerConsented={partnerConsented}
                                     partnerDeclined={partnerDeclined}
                                     onConsent={handleConsent}
-                                    profileData={{
-                                        instagram: typeof window !== 'undefined' ? localStorage.getItem("arena_instagram") || "@user" : "@user",
-                                        topTrack: typeof window !== 'undefined' ? localStorage.getItem("arena_top_track") || "Midnight City - M83" : "Midnight City - M83"
+                                    profileData={partnerProfile || {
+                                        instagram: "Pending...",
+                                        topTrack: "Pending..."
                                     }}
                                     onNextMatch={handleNextMatch}
                                     onExit={handleExit}
-                                    onDecline={handleDecline}
+                                    onDecline={handleExit} // Redirect decline to exit flow
+                                    phase={arenaPhase === 'reveal_result' ? 'result' : 'decision'}
+                                    timeLeft={phaseTimer}
                                 />
                             )}
                         </AnimatePresence>

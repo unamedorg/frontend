@@ -61,16 +61,21 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
                 if (res.ok) {
                     const data = await res.json();
-                    // Prefer backend data if it exists, otherwise keep local (or overwrite? Backend is truth)
-                    if (data.Instagram) setInstagram(data.Instagram);
-                    if (data.LinkedIn) setLinkedin(data.LinkedIn);
-                    if (data.Karma !== undefined) setKarma(data.Karma);
+                    const insta = data.instagram || data.Instagram;
+                    const lkd = data.linkedin || data.LinkedIn;
+                    const km = data.karma !== undefined ? data.karma : data.Karma;
 
-                    if (data.Instagram || data.LinkedIn || data.Karma !== undefined) {
-                        // Update local cache to match backend
-                        if (data.Instagram) localStorage.setItem("arena_instagram", data.Instagram);
-                        if (data.LinkedIn) localStorage.setItem("arena_linkedin", data.LinkedIn);
-                        if (data.Karma !== undefined) localStorage.setItem("arena_karma", data.Karma.toString());
+                    if (insta) {
+                        setInstagram(insta);
+                        localStorage.setItem("arena_instagram", insta);
+                    }
+                    if (lkd) {
+                        setLinkedin(lkd);
+                        localStorage.setItem("arena_linkedin", lkd);
+                    }
+                    if (km !== undefined) {
+                        setKarma(km);
+                        localStorage.setItem("arena_karma", km.toString());
                     }
                 }
             } catch (err) {
@@ -110,8 +115,15 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             });
 
             if (!res.ok) {
+                // GRACEFUL FIX: If the profile already exists, we treat it as a "Sync Success"
+                // This handles the strict backend InsertOne logic without showing an error to the user.
                 if (res.status === 409) {
-                    throw new Error("Profile already exists on this account.");
+                    console.log("Profile already exists on server. Syncing local state.");
+                    localStorage.setItem("arena_instagram", instagram);
+                    localStorage.setItem("arena_linkedin", finalLinkedin);
+                    setIsEditing(false);
+                    window.location.reload();
+                    return;
                 }
                 const errorData = await res.json().catch(() => ({}));
                 throw new Error(errorData.error || "Failed to save profile. Check your details.");
@@ -120,6 +132,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             // 3. Save to LocalStorage (Extras)
             localStorage.setItem("arena_top_track", topTrack);
             localStorage.setItem("arena_instagram", instagram);
+            localStorage.setItem("arena_linkedin", finalLinkedin);
 
             setIsEditing(false);
             window.location.reload(); // Force reload to show new photo in Header
@@ -295,29 +308,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                                 </div>
                             </div>
 
-                            {/* Anthem */}
-                            <div className={`hidden sm:block group relative p-4 rounded-2xl border transition-all duration-300 ${isEditing ? 'bg-white/5 border-white/20' : 'bg-gradient-to-r from-green-500/5 to-emerald-500/5 border-white/5 hover:border-green-500/20'}`}>
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl text-white shadow-lg shadow-green-500/20">
-                                        <Music className="w-5 h-5" />
-                                    </div>
-                                    <div className="flex-1 overflow-hidden">
-                                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider mb-0.5">Vibe Anthem</p>
-                                        {isEditing ? (
-                                            <input
-                                                value={topTrack}
-                                                onChange={e => setTopTrack(e.target.value)}
-                                                placeholder="Song Name"
-                                                className="w-full bg-transparent border-none outline-none text-sm text-white placeholder:text-neutral-700 font-medium"
-                                            />
-                                        ) : (
-                                            <p className="text-sm font-medium text-white truncate">
-                                                {topTrack || <span className="text-neutral-600 italic">Silence...</span>}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+
 
                         </div>
                     </div>

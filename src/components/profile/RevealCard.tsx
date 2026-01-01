@@ -18,35 +18,24 @@ interface RevealCardProps {
     onNextMatch: () => void;
     onExit?: () => void;
     onDecline?: () => void;
+    // ---------------------------------------------------------------------------
+    // MODE: DECISION (Wait for timer) vs RESULT (Show outcome)
+    // ---------------------------------------------------------------------------
+    // The parent controls 'phase'. 
+    // If phase === 'decision', we show buttons. If user clicks, we show 'Waiting' (but same phase).
+    // If phase === 'result', we show the Match/Fail screen.
+    phase: 'decision' | 'result';
+    timeLeft: number;
 }
 
-export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsented, partnerDeclined, profileData, onNextMatch, onExit, onDecline }: RevealCardProps) {
+export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsented, partnerDeclined, profileData, onNextMatch, onExit, onDecline, phase, timeLeft }: RevealCardProps) {
     const [hasSkipped, setHasSkipped] = useState(false);
-    const [flowEnded, setFlowEnded] = useState(false);
-    const [timeLeft, setTimeLeft] = useState(10);
 
+    // Internal state purely for visual "skipped" confirmation before phase change
     const handleSkip = () => {
         setHasSkipped(true);
         if (onDecline) onDecline();
     };
-
-    // Timer Logic
-    useEffect(() => {
-        // If matched or skipped, stop timer
-        if (isRevealed || hasSkipped) return;
-
-        if (timeLeft <= 0) {
-            setFlowEnded(true);
-            // If time acts as a force-skip:
-            // if (onDecline) onDecline(); 
-            return;
-        }
-
-        const timer = setInterval(() => {
-            setTimeLeft((prev) => prev - 1);
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [timeLeft, isRevealed, hasSkipped, onDecline]);
 
     const containerVariants = {
         hidden: { opacity: 0, scale: 0.9, rotateX: 10 },
@@ -63,19 +52,12 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
         exit: { opacity: 0, scale: 0.9 }
     };
 
-    // 1. Matched State (Both Consented) - Handled by Parent usually, but if isRevealed is true, we assume parent might unmount this or show matched UI. 
-    // Wait, the parent *switches* to this component? No, this component *handles* the reveal logic.
-    // Looking at previous code, `isRevealed` (matchConfirmed) passed in triggers `matchConfirmed` Logic? 
-    // NO! Structure is: `RevealCard` handles both Pending AND Reveal UI?
-    // Let's check `ArenaPage`. `isRevealed={matchConfirmed}`. 
-    // In `RevealCard`, `if (isRevealed || ...)` it shows the result.
-    // So if `isRevealed` is true, we show "Match Verified".
+    // ---------------------------------------------------------------------------
+    // LOGIC: Phase-Driven Display
+    // ---------------------------------------------------------------------------
 
-    // 2. Result State: Matched, Skipped, or Timeout (Flow Ended)
-    // Note: 'partnerDeclined' is included here if provided, but per new logic, we might suppress it visually until timeout? 
-    // No, if `partnerDeclined` is passed as TRUE, it means we KNOW. But the goal is to NOT know. 
-    // So ArenaPage acts as the gatekeeper. Here we just render what we know.
-    const showResult = isRevealed || hasSkipped || partnerDeclined || flowEnded;
+    // We only show the result view if the phase has officially advanced to 'result'.
+    const showResult = phase === 'result';
 
     if (showResult) {
         // Determine Status Text
@@ -83,6 +65,10 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
         let statusSubtitle = "Privacy Maintained";
         let statusIcon = <UserX className="w-5 h-5 text-red-500" />;
         let isSuccess = false;
+
+        // If 'isRevealed' (Match Confirmed) is true, we succeeded.
+        // Or if we skipped/declined, we failed.
+        // Or if partner declined.
 
         if (isRevealed) {
             statusTitle = "Match Verified";
@@ -94,6 +80,13 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
             statusSubtitle = "You chose privacy";
         } else if (partnerDeclined) {
             statusTitle = "Partner Declined";
+            statusSubtitle = "They chose privacy";
+        } else {
+            // Timeout or one-sided consent fail
+            // If I consented but partner didn't (and didn't explicitly decline yet?)
+            // Basically if we are in Result phase and !isRevealed, it's a fail.
+            statusTitle = "Connection Expired";
+            statusSubtitle = "No Mutual Accord";
         }
 
         return (
@@ -135,10 +128,7 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
                                     ) : partnerDeclined ? (
                                         "Partner chose to keep their profile private."
                                     ) : (
-                                        // Timeout Case
-                                        hasConsented
-                                            ? "Partner did not reveal in time."
-                                            : "You chose to keep your profile private."
+                                        "Mutual consent was not reached in time."
                                     )}
                                     <br />
                                     <span className="text-neutral-600 text-xs mt-2 block">Identities remain hidden.</span>
@@ -175,7 +165,7 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
                         )}
                     </div>
 
-                    {/* Footer Actions */}
+                    {/* Footer Actions - ALWAYS VISIBLE IN RESULT */}
                     <div className="grid grid-cols-2 gap-3">
                         <button
                             onClick={onExit || (() => window.location.href = '/')}
@@ -194,6 +184,34 @@ export function RevealCard({ isRevealed, onConsent, hasConsented, partnerConsent
             </motion.div>
         );
     }
+
+    // DECISION PHASE (Waiting Mode)
+    // If user has already clicked Reveal/Skip, show waiting screen.
+    const isWaitingForTimer = hasConsented || hasSkipped;
+
+    if (isWaitingForTimer) {
+        return (
+            <motion.div
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+                className="w-full max-w-sm relative group"
+            >
+                <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-0" />
+                <div className="relative z-10 p-12 flex flex-col items-center justify-center min-h-[300px]">
+                    <div className="w-16 h-16 mb-6 rounded-full border-2 border-white/10 border-t-white animate-spin" />
+                    <h3 className="text-xl font-display font-bold text-white mb-2">
+                        {hasConsented ? "Waiting for Partner..." : "Closing Connection..."}
+                    </h3>
+                    <p className="text-neutral-500 font-mono text-xs uppercase tracking-widest animate-pulse">
+                        Finalizing in {timeLeft}s
+                    </p>
+                </div>
+            </motion.div>
+        );
+    }
+
+
 
     // Pending State (Prior to Match Reveal)
     return (

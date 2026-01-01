@@ -47,10 +47,7 @@ export default function Home() {
       let score = 0;
       let backendSuccess = false;
       // 1. Email (Mandatory)
-      if (user.email) score += 25;
-
-      // 2. Top Track (Local)
-      if (savedTrack) score += 25;
+      if (user.email) score += 34;
 
       try {
         // 2. Fetch Backend Data
@@ -62,19 +59,16 @@ export default function Home() {
 
         if (res.ok) {
           const data = await res.json();
-          // Profile Exists
           setProfileExists(true);
           backendSuccess = true;
 
-          if (data.Instagram) score += 25;
-          if (data.LinkedIn) score += 25;
+          // Support both casing styles just in case
+          if (data.instagram || data.Instagram) score += 33;
+          if (data.linkedin || data.LinkedIn) score += 33;
         } else if (res.status === 404) {
-          // Profile MISSING - This is expected for new users, so we don't log a console error.
+          setProfileExists(false);
           if (!savedInsta) {
-            setProfileExists(false);
             setShowProfile(true);
-          } else {
-            setProfileExists(true);
           }
         }
 
@@ -82,27 +76,30 @@ export default function Home() {
         console.error("Profile check failed", e);
       }
 
-      // 3. Local Preferences
-      const savedFilter = typeof window !== 'undefined' ? localStorage.getItem("arena_filter") : null;
+      // 3. Local Fallbacks (If backend failed or missing data)
+      const savedLinkedin = typeof window !== 'undefined' ? localStorage.getItem("arena_linkedin") : null;
 
-      // Fallback: If backend failed/missing but we have local data, count it
-      if (savedInsta && score < 50) score += 25;
+      // Check Instagram fallback
+      if (savedInsta && score < 67) {
+        score += 33;
+      }
 
-      // CRITICAL FIX: If backend failed (Auth Error or 404), but we have local data, 
-      // we must OPTIMISTICALLY assume the profile exists to let the user in.
-      if (!backendSuccess && savedInsta) {
+      // Check LinkedIn fallback
+      if (savedLinkedin && score < 100) {
+        score += 33;
+      }
+
+      if (!backendSuccess && (savedInsta || savedLinkedin)) {
         console.log("⚠️ Backend failed/missing, but local profile found. Allowing entry.");
         setProfileExists(true);
       } else if (!backendSuccess && !savedInsta && !profileExists) {
-        // Case: Backend failed (401) AND No Local Data. 
-        // We MUST open the modal so they can at least fill the data.
         console.log("No profile found anywhere. Forcing modal.");
         setShowProfile(true);
       }
 
-      // Removed Filter from scoring
+      setCompletion(Math.min(score, 100));
 
-      setCompletion(score);
+      // Removed Filter from scoring
       setLoadingProfile(false);
     };
 
