@@ -276,7 +276,7 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
         } as any);
     }, [sendMessage]);
 
-    const handleSend = (e?: React.FormEvent) => {
+    const handleSend = (e?: React.FormEvent | React.KeyboardEvent) => {
         e?.preventDefault();
         if (!inputText.trim()) return;
 
@@ -301,6 +301,13 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
         });
 
         setInputText("");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
     };
 
     const handleGifSelect = useCallback((gifUrl: string) => {
@@ -481,15 +488,23 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
 
             {/* Input Area */}
             <div className="p-4 bg-gradient-to-t from-black/80 to-transparent relative z-40">
-                <form onSubmit={handleSend} className="relative flex items-center gap-2">
-                    <input
-                        type="text"
+                <form onSubmit={handleSend} className="relative flex items-end gap-2">
+                    <textarea
+                        id="chat-message-input"
+                        name="message"
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
                         placeholder={isProcessing ? "Optimizing image..." : "Type a message..."}
                         disabled={isProcessing}
-                        className="w-full bg-neutral-900/50 border border-white/10 rounded-full pl-5 pr-12 py-3 text-base text-white focus:outline-none focus:border-white/30 focus:bg-neutral-900 transition-all font-body placeholder:text-neutral-600 disabled:opacity-50 disabled:cursor-wait"
+                        rows={1}
+                        className="w-full bg-neutral-900/50 border border-white/10 rounded-[24px] pl-5 pr-12 py-3 text-base text-white focus:outline-none focus:border-white/30 focus:bg-neutral-900 transition-all font-body placeholder:text-neutral-600 disabled:opacity-50 disabled:cursor-wait resize-none min-h-[48px] max-h-[120px] overflow-y-auto"
+                        enterKeyHint="send"
+                        autoCapitalize="sentences"
+                        autoCorrect="on"
+                        spellCheck="true"
+                        inputMode="text"
                     />
 
                     {isProcessing && (

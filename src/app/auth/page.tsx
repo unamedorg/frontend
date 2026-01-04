@@ -11,7 +11,7 @@ import { Loader2, ArrowRight, CheckCircle2, AlertCircle, Instagram, Linkedin } f
 import { useAuth } from "@/providers/AuthProvider";
 import { Suspense } from "react";
 
-import { AuthBackground } from "@/components/auth/AuthBackground";
+import { AuthBackground } from "../../components/auth/AuthBackground";
 import { Logo } from "@/components/Logo";
 
 function AuthContent() {
@@ -133,8 +133,8 @@ function AuthContent() {
             <AuthBackground />
 
             {/* Top Logo - Fixed at top for continuity */}
-            <div className="absolute top-12 z-20">
-                <Logo size="sm" />
+            <div className="absolute top-16 z-20">
+                <Logo size="md" />
             </div>
 
             <div className="relative z-10 w-full max-w-md mt-12">
@@ -205,11 +205,7 @@ function AuthContent() {
                                     )}
                                 </button>
 
-                                <div className="text-center pt-4">
-                                    <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-600 font-mono">
-                                        End-to-end encrypted // Secure Access
-                                    </p>
-                                </div>
+
                             </div>
                         </motion.div>
                     )}
@@ -326,12 +322,7 @@ function AuthContent() {
                 </AnimatePresence>
             </div>
 
-            {/* Bottom Info Bar for continuity */}
-            <div className="absolute bottom-12 flex items-center gap-8 text-[9px] font-mono uppercase tracking-[0.3em] text-neutral-700">
-                <span>Latency: 12ms</span>
-                <span className="hidden sm:inline">Auth: Firebase_SSO</span>
-                <span>Ver 2.1.0</span>
-            </div>
+
         </div>
     );
 }

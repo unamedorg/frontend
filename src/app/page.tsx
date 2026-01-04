@@ -210,7 +210,7 @@ export default function Home() {
 
       {/* 2. Focal Point Glow (From Landing Page Hero) */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] bg-indigo-500/5 blur-[120px] rounded-full" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] bg-indigo-500/[0.02] blur-[120px] rounded-full" />
       </div>
 
       {/* Modals */}
