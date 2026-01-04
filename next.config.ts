@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  compress: true, // Enable Gzip compression
+  poweredByHeader: false, // Security/Performance: Remove X-Powered-By
+  // swcMinify: true, // Default in Next.js 13+ (Speedy Web Compiler)
+
+  // Experimental/Advanced features
+  experimental: {
+    // optimizeCss: true, // DISABLED: Requires 'critters' package, causing build stability issues.
+  },
+
   async rewrites() {
     // Allows Proxying to backend to avoid CORS if Env Vars are set to use Relative Paths
     // Hardcoded fallback to Ensure Cloud works even if Env Vars flake out

@@ -1,49 +1,57 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 
 interface CampusRadarProps {
     mode: 'college' | 'random';
 }
 
 export function CampusRadar({ mode }: CampusRadarProps) {
+    const [elapsed, setElapsed] = useState(0);
+
+    useEffect(() => {
+        const start = Date.now();
+        const timer = setInterval(() => {
+            setElapsed(Math.floor((Date.now() - start) / 1000));
+        }, 100);
+        return () => clearInterval(timer);
+    }, []);
+
+    const accentColor = mode === 'college' ? '#1e3a8a' : '#3b82f6'; // Navy or Vibe Blue
+
     return (
-        <div className="relative flex items-center justify-center w-64 h-64">
-            {/* Core Core */}
-            <div className="w-4 h-4 bg-white rounded-full z-10 shadow-[0_0_20px_rgba(255,255,255,0.8)]" />
+        <div className="relative w-[320px] h-[320px] flex items-center justify-center">
+            {/* Visual Layers from Features.tsx (Scaled to 320px) */}
 
-            {/* Radar Sweep */}
-            <motion.div
-                className="absolute w-full h-full rounded-full border border-white/10"
-                style={{
-                    background: "conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.1) 60deg, transparent 61deg)"
-                }}
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            {/* 1. Outer Static Ring (Faint) - Made more visible */}
+            <div className="absolute w-80 h-80 rounded-full border border-white/20" />
+
+            {/* 2. Middle Dashed Ring (Slow Spin) - Made more distinct/white */}
+            <div className="absolute w-64 h-64 rounded-full border border-dashed border-white/40 animate-[spin_60s_linear_infinite]" />
+
+            {/* 3. Inner Active Ring (Fast Spin) - The "Scanning" visual */}
+            <div
+                className="absolute w-48 h-48 rounded-full border-t-2 animate-spin"
+                style={{ borderColor: `${accentColor} transparent transparent transparent` }}
             />
 
-            {/* Pulse Waves */}
-            {[0, 1, 2].map((i) => (
-                <motion.div
-                    key={i}
-                    className="absolute border border-white/30 rounded-full"
-                    initial={{ width: "0%", height: "0%", opacity: 1 }}
-                    animate={{ width: "100%", height: "100%", opacity: 0 }}
-                    transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                        delay: i * 0.6,
-                        ease: "easeOut"
-                    }}
-                />
-            ))}
-
-            {/* Mode Indicator Ring */}
-            <motion.div
-                className={`absolute inset-0 rounded-full border-2 ${mode === 'college' ? 'border-blue-500/50' : 'border-purple-500/50'}`}
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-            />
+            {/* Center Content */}
+            <div className="relative z-10 flex flex-col items-center">
+                <div className="text-7xl font-mono text-white tracking-tighter drop-shadow-2xl flex items-baseline">
+                    {elapsed}
+                    <span
+                        className={`text-3xl ml-1 ${mode === 'random' ? 'text-vibe' : ''}`}
+                        style={mode === 'college' ? { color: accentColor } : {}}
+                    >s</span>
+                </div>
+                {/* EXACT Label Style from Features.tsx */}
+                <span
+                    className={`text-[10px] font-bold uppercase tracking-[0.3em] mt-2 ${mode === 'random' ? 'text-vibe' : ''}`}
+                    style={mode === 'college' ? { color: accentColor } : {}}
+                >
+                    LIMIT
+                </span>
+            </div>
         </div>
     );
 }

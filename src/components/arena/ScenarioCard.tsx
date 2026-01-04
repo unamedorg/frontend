@@ -1,5 +1,6 @@
 "use client";
 
+import React, { memo } from "react";
 import { motion } from "framer-motion";
 import { Sparkles, Target } from "lucide-react";
 
@@ -7,7 +8,7 @@ interface ScenarioCardProps {
     scenario: string;
 }
 
-export function ScenarioCard({ scenario }: ScenarioCardProps) {
+function ScenarioCardBase({ scenario }: ScenarioCardProps) {
     // Extract topic and prompt safely if format varies
     const parts = scenario.split(":");
     const title = parts.length > 1 ? parts[0] : "Mission";
@@ -50,3 +51,5 @@ export function ScenarioCard({ scenario }: ScenarioCardProps) {
         </motion.div>
     );
 }
+
+export const ScenarioCard = memo(ScenarioCardBase);

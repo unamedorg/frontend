@@ -9,6 +9,7 @@ import { ScenarioCard } from '@/components/arena/ScenarioCard';
 import { VibeCheck } from '@/components/arena/VibeCheck';
 import { RevealCard } from '@/components/profile/RevealCard';
 import { CircularTimer } from '@/components/arena/CircularTimer';
+import { SpinningTimer } from '@/components/arena/SpinningTimer';
 import { motion, AnimatePresence } from 'framer-motion';
 import { wsResponse } from '@/types/socket';
 import { config } from '@/lib/config';
@@ -39,6 +40,7 @@ function ArenaContent() {
     // Phase Management
     const [arenaPhase, setArenaPhase] = useState<'chat' | 'vibe' | 'reveal_decision' | 'reveal_result'>('chat');
     const [phaseTimer, setPhaseTimer] = useState(0);
+    const [showDisconnectModal, setShowDisconnectModal] = useState(false);
 
     // Refs
     const isConnectedRef = useRef(isConnected);
@@ -209,6 +211,13 @@ function ArenaContent() {
             const subtype = signal.subtype;
 
             if (subtype === 'handshake') {
+                // 🛑 GHOST PREVENTION: Only ACK if we are actually waiting for a match.
+                // If we are idle (no pending match), we probably missed the 'start' signal.
+                if (!pendingMatchData && !matchData) {
+                    console.warn("👻 GHOST SIGNAL: Received handshake but I have no match data. Ignoring.");
+                    return;
+                }
+
                 console.log("🤝 Handshake received from partner. Reply ack + Fast Start.");
                 sendMessage({
                     type: 'signal',
@@ -225,7 +234,7 @@ function ArenaContent() {
                     setArenaPhase('chat');
                     setVibeSubmitted(false);
                     setQueuedKarma(0);
-                    startTimer(180);
+                    startTimer(270);
 
                     // 📡 RE-ESTABLISH: If we already consented in a previous session, inform partner
                     if (myConsent) {
@@ -253,7 +262,7 @@ function ArenaContent() {
                     setArenaPhase('chat');
                     setVibeSubmitted(false);
                     setQueuedKarma(0);
-                    startTimer(180);
+                    startTimer(270);
                 }
                 setHandshakeStatus('verified');
 
@@ -433,14 +442,13 @@ function ArenaContent() {
 
     // Poll for Backend Match Confirmation ONLY in result phase (or late decision)
     useEffect(() => {
-        // Only pool if we consented and valid session
+        // Only poll if we consented and valid session
         if (!myConsent || !matchData || !(matchData as any).roomid || !sessionId) return;
 
         // Optimization: Only poll if we don't know the result yet
         if (matchConfirmed) return;
 
         const interval = setInterval(async () => {
-            // ... (Keep existing polling logic, it's fine)
             try {
                 if (!user) return;
                 const token = await user.getIdToken();
@@ -463,6 +471,48 @@ function ArenaContent() {
         return () => clearInterval(interval);
     }, [myConsent, matchConfirmed, matchData, sessionId, user]);
 
+    // 🚨 SAFETY NET: If match verified but no profile (Ghost Socket?), aggressively ping partner
+    useEffect(() => {
+        if (matchConfirmed && !partnerProfile && isConnected) {
+            console.log("⚠️ Match verified but missing profile. Pinging partner for data...");
+
+            // Immediate Ping
+            sendMessage({
+                type: 'signal',
+                subtype: 'status_request',
+                sender: tabId,
+                data: null
+            } as any);
+
+            // Repeat every 1s until resolved or partner leaves
+            const recoveryInterval = setInterval(() => {
+                if (partnerProfile) {
+                    clearInterval(recoveryInterval);
+                    return;
+                }
+                sendMessage({
+                    type: 'signal',
+                    subtype: 'status_request',
+                    sender: tabId,
+                    data: null
+                } as any);
+            }, 1000);
+
+            return () => clearInterval(recoveryInterval);
+        }
+    }, [matchConfirmed, partnerProfile, isConnected, sendMessage, tabId]);
+
+    const handleDecline = () => {
+        // Notify partner immediately
+        sendMessage({
+            type: 'signal',
+            subtype: 'decline',
+            sender: tabId,
+            data: null
+        } as any);
+        // We do strictly nothing else here, RevealCard handles the UI state (waiting -> result)
+    };
+
     const handleExit = useCallback(() => {
         if (isConnected) {
             sendMessage({
@@ -476,57 +526,42 @@ function ArenaContent() {
         router.push('/');
     }, [isConnected, sendMessage, disconnect, router, resetTimer]);
 
-    const scenario = (matchData as any)?.topic || "Mission: Get to know your partner.";
+    // const scenario = (matchData as any)?.topic || "Mission: Get to know your partner.";
+    const scenario = "Debate: Is 'Right Person, Wrong Time' a real phenomenon, or just a coping mechanism?";
 
     return (
-        <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-black text-white p-4 overflow-hidden">
+        <div className={`flex flex-col h-[100dvh] max-h-[100dvh] transition-colors duration-700 ${!matchData ? 'bg-[radial-gradient(circle_at_center,_#0f172a_0%,_#050a18_100%)]' : 'bg-[#050a18]'} text-white p-2 sm:p-4 overflow-hidden`}>
 
             {/* Header / Timer */}
-            <header className="flex justify-between items-center mb-4 p-4 border border-white/10 rounded-xl bg-neutral-900/50">
+            <header className="flex justify-between items-center mb-2 sm:mb-2 p-2 sm:p-3 border border-white/10 rounded-xl bg-neutral-900/50 backdrop-blur-md relative z-20 min-h-[52px]">
 
-                {/* Status Only (No Profile Click) */}
-                <div className="flex items-center space-x-3">
-                    <div className="relative group">
-                        <img
-                            src={user?.photoURL || "https://ui-avatars.com/api/?background=random"}
-                            alt="Profile"
-                            className="relative w-10 h-10 rounded-full border-2 border-neutral-800 object-cover opacity-80"
-                        />
-                        <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-neutral-900 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                    </div>
-
-                    <div className="hidden sm:flex flex-col">
-                        <span className="font-display font-medium text-sm leading-tight text-white/90">
-                            {matchData?.type === 'start' ? `Echo Partner` : (user?.displayName?.split(' ')[0] || 'User')}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                            <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-neutral-500 uppercase">
-                                {isConnected ? 'Link_Active' : 'Offline'}
-                            </span>
+                {/* Status Only (No Profile Click) -> Now Clickable for Disconnect */}
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                    <button
+                        onClick={() => setShowDisconnectModal(true)}
+                        className="relative group cursor-pointer focus:outline-none"
+                    >
+                        {/* Gradient Border Wrapper */}
+                        <div className="rounded-full bg-vibe p-[1.5px] group-hover:scale-105 transition-transform duration-200 group-active:scale-95">
+                            <img
+                                src={user?.photoURL || "https://ui-avatars.com/api/?background=random"}
+                                alt="Profile"
+                                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                            />
                         </div>
-                    </div>
+                        <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 border-2 border-neutral-900 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                    </button>
+
+
                 </div>
 
-                <div className="flex items-center justify-center min-w-[120px]">
-                    {timeRemaining === 0 ? (
-                        <span className="text-red-500 font-mono font-bold text-sm tracking-widest animate-pulse">
-                            CHAT ENDED
-                        </span>
-                    ) : timeRemaining > config.warningTime ? (
-                        <span className="text-3xl font-display font-bold tabular-nums tracking-tight text-white">
-                            {formatTime(timeRemaining)}
-                        </span>
-                    ) : (
-                        <CircularTimer timeRemaining={timeRemaining} totalTime={config.warningTime} />
-                    )}
+                {/* Timer Display */}
+                <div className="flex items-center justify-center min-w-[100px] sm:min-w-[120px]">
+                    {matchData && <SpinningTimer timeRemaining={timeRemaining} />}
                 </div>
-                <button
-                    onClick={handleExit}
-                    className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white"
-                >
-                    <X className="w-5 h-5" />
-                </button>
+
+                {/* Right Placeholder to balance the flex layout since X is gone */}
+                <div className="w-9 h-9 sm:w-10 sm:h-10 opacity-0 pointer-events-none" />
             </header>
 
             {/* Main Content Area */}
@@ -570,7 +605,7 @@ function ArenaContent() {
                             <ScenarioCard scenario={scenario} />
 
                             {/* Chat Area */}
-                            <div className="flex-1 mb-4 overflow-hidden flex flex-col min-h-0">
+                            <div className="flex-1 mb-2 sm:mb-4 overflow-hidden flex flex-col min-h-0">
                                 <ChatInterface matchData={matchData} onTimeout={handleNextMatch} />
                             </div>
                             {/* Bottom Sheet Control */}
@@ -588,7 +623,7 @@ function ArenaContent() {
 
                 {/* Reveal Phase Logic */}
                 {arenaPhase !== 'chat' && (
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 transition-all duration-500">
                         <AnimatePresence mode="wait">
                             {arenaPhase === 'vibe' ? (
                                 <motion.div
@@ -617,7 +652,7 @@ function ArenaContent() {
                                     }}
                                     onNextMatch={handleNextMatch}
                                     onExit={handleExit}
-                                    onDecline={handleExit} // Redirect decline to exit flow
+                                    onDecline={handleDecline} // Redirect decline to exit flow
                                     phase={arenaPhase === 'reveal_result' ? 'result' : 'decision'}
                                     timeLeft={phaseTimer}
                                 />
@@ -626,6 +661,61 @@ function ArenaContent() {
                     </div>
                 )}
             </div>
+
+            {/* Disconnect Confirmation Modal */}
+            <AnimatePresence>
+                {showDisconnectModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                        onClick={() => setShowDisconnectModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                            className="w-full max-w-sm bg-[#090909] border border-white/10 rounded-3xl p-1 shadow-2xl relative overflow-hidden group"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Inner Content Wrapper for finer border radius */}
+                            <div className="bg-neutral-900/50 backdrop-blur-xl rounded-[20px] p-6 relative overflow-hidden">
+
+                                {/* Subtle Red ambient glow from top */}
+                                <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-500/20 blur-[60px] pointer-events-none" />
+
+                                <div className="relative z-10 flex flex-col items-center text-center">
+                                    <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20 mb-4 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                                        <X className="w-6 h-6 text-red-500" />
+                                    </div>
+
+                                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Abort Mission?</h3>
+                                    <p className="text-sm text-neutral-400 leading-relaxed mb-6 px-2">
+                                        Leaving now will end the current connection. Are you sure you want to exit?
+                                    </p>
+
+                                    <div className="grid grid-cols-2 gap-3 w-full">
+                                        <button
+                                            onClick={() => setShowDisconnectModal(false)}
+                                            className="py-3 px-4 rounded-xl bg-white/5 border border-white/5 text-neutral-300 font-medium hover:bg-white/10 hover:text-white transition-all text-sm active:scale-95"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleExit}
+                                            className="py-3 px-4 rounded-xl bg-gradient-to-br from-red-600 to-red-700 text-white font-bold hover:from-red-500 hover:to-red-600 transition-all shadow-lg shadow-red-900/30 text-sm active:scale-95 flex items-center justify-center gap-2"
+                                        >
+                                            Yes, Exit
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

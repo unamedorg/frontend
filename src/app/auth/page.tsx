@@ -11,18 +11,20 @@ import { Loader2, ArrowRight, CheckCircle2, AlertCircle, Instagram, Linkedin } f
 import { useAuth } from "@/providers/AuthProvider";
 import { Suspense } from "react";
 
+import { AuthBackground } from "@/components/auth/AuthBackground";
+import { Logo } from "@/components/Logo";
+
 function AuthContent() {
     const { user: authUser, loading: authLoading } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [step, setStep] = useState<"login" | "onboarding" | "loading">("loading"); // Start as loading 
+    const [step, setStep] = useState<"login" | "onboarding" | "loading">("loading");
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Initial Mode from URL
+    // Initial Mode from URL - although we mainly use Google now
     const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
-    const [authMode, setAuthMode] = useState<"signin" | "signup">(initialMode);
 
     // Redirect if already logged in
     useEffect(() => {
@@ -33,15 +35,10 @@ function AuthContent() {
         }
     }, [authUser, authLoading, router]);
 
-    // Form State
+    // Form State for onboarding
     const [instagram, setInstagram] = useState("");
     const [linkedin, setLinkedin] = useState("");
     const [filter, setFilter] = useState("random");
-
-    // Email/Pass State
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [fullName, setFullName] = useState("");
 
     const handleGoogleLogin = async () => {
         setLoading(true);
@@ -58,63 +55,11 @@ function AuthContent() {
         }
     };
 
-    const handleEmailAuth = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError(null);
-
-        try {
-            const { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth");
-            let currentUser: User;
-
-            if (authMode === "signup") {
-                if (!fullName) throw new Error("Please enter your name.");
-                const result = await createUserWithEmailAndPassword(auth, email, password);
-                currentUser = result.user;
-
-                // Set Display Name & Default Photo
-                await updateProfile(currentUser, {
-                    displayName: fullName,
-                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=random`
-                });
-
-                // New user -> Force Onboarding
-                setUser(currentUser);
-                setStep("onboarding");
-                setLoading(false);
-            } else {
-                const result = await signInWithEmailAndPassword(auth, email, password);
-                currentUser = result.user;
-
-                // Existing user -> Check Profile
-                setUser(currentUser);
-                await checkProfileExistence(currentUser);
-            }
-
-        } catch (err: any) {
-            console.error("Auth Failed", err);
-            if (err.code === 'auth/invalid-credential') {
-                setError("Invalid email or password.");
-            } else if (err.code === 'auth/email-already-in-use') {
-                setError("Email is already registered.");
-            } else if (err.code === 'auth/weak-password') {
-                setError("Password should be at least 6 characters.");
-            } else if (err.code === 'auth/operation-not-allowed') {
-                setError("Email/Password sign-in is not enabled. Please use Google.");
-            } else {
-                setError(err.message || "Authentication failed. Try again.");
-            }
-            setLoading(false);
-        }
-    };
-
     const checkProfileExistence = async (currentUser: User) => {
         try {
             const token = await currentUser.getIdToken();
             const apiUrl = config.getApiUrl();
 
-            // Note: If using a proxy in next.config.ts, this might be just "/con/profile/exists"
-            // But assuming getApiUrl handles the base domain.
             const res = await fetch(`${apiUrl}/con/profile/exists`, {
                 method: "GET",
                 headers: {
@@ -148,11 +93,9 @@ function AuthContent() {
         setError(null);
 
         try {
-            // Force refresh token to ensure new display name/photo are in the JWT claims
             const token = await user.getIdToken(true);
             const apiUrl = config.getApiUrl();
 
-            // Save filter preference to localStorage
             localStorage.setItem("arena_filter", filter);
 
             let finalLinkedin = linkedin;
@@ -177,7 +120,6 @@ function AuthContent() {
                 throw new Error(errorData.error || "Registration failed");
             }
 
-            // Success
             router.push("/");
         } catch (err: any) {
             console.error("Registration Failed", err);
@@ -187,144 +129,88 @@ function AuthContent() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-black p-4 font-body text-white relative overflow-hidden">
-            {/* Background Ambience */}
-            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-[128px]" />
-                <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-[128px]" />
+        <div className="min-h-screen flex flex-col items-center justify-center bg-black p-4 font-body text-white relative overflow-hidden">
+            <AuthBackground />
+
+            {/* Top Logo - Fixed at top for continuity */}
+            <div className="absolute top-12 z-20">
+                <Logo size="sm" />
             </div>
 
-            <div className="relative z-10 w-full max-w-md">
+            <div className="relative z-10 w-full max-w-md mt-12">
                 <AnimatePresence mode="wait">
                     {step === "login" && (
                         <motion.div
                             key="login"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -20 }}
-                            transition={{ duration: 0.4, ease: "easeOut" }}
-                            className="bg-neutral-900/50 backdrop-blur-xl border border-neutral-800 p-8 rounded-2xl shadow-2xl"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 1.05 }}
+                            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                            className="bg-neutral-900/40 backdrop-blur-2xl border border-white/5 p-10 rounded-3xl shadow-2xl relative overflow-hidden group"
                         >
-                            <div className="text-center mb-6">
-                                <h1 className="font-display text-3xl font-bold mb-2 tracking-tight">
-                                    {authMode === "signin" ? "Welcome Back" : "Create Account"}
+                            {/* Inner Glow Background */}
+                            <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-600/10 rounded-full blur-[80px]" />
+                            <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-600/10 rounded-full blur-[80px]" />
+
+                            <div className="text-center mb-10">
+                                <h1 className="font-display text-4xl font-bold mb-3 tracking-tight">
+                                    Initiate Session
                                 </h1>
-                                <p className="text-neutral-400">
-                                    {authMode === "signin" ? "Sign in to enter the Arena." : "Join the Arena today."}
+                                <p className="text-neutral-400 text-sm tracking-wide">
+                                    Authenticate via the secure uplink to proceed.
                                 </p>
                             </div>
 
-                            {/* Config Warning */}
-                            {/* @ts-ignore: key check */}
-                            {auth.app.options.apiKey === "YOUR_API_KEY_HERE" && (
-                                <div className="mb-6 p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg flex items-center gap-3 text-orange-400 text-sm">
-                                    <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                                    <span>
-                                        Firebase credentials missing. Please update <code>src/lib/firebase.ts</code>.
-                                    </span>
-                                </div>
-                            )}
-
                             {error && (
-                                <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3 text-red-400 text-sm">
-                                    <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-400 text-xs"
+                                >
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
                                     {error}
-                                </div>
+                                </motion.div>
                             )}
 
-                            {/* Email/Pass Form */}
-                            <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
-                                {authMode === "signup" && (
-                                    <div className="space-y-1">
-                                        <input
-                                            type="text"
-                                            placeholder="Full Name"
-                                            value={fullName}
-                                            onChange={(e) => setFullName(e.target.value)}
-                                            className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-3 px-4 outline-none focus:border-neutral-500 transition-all placeholder:text-neutral-600 text-sm"
-                                            required
-                                        />
-                                    </div>
-                                )}
-                                <div className="space-y-1">
-                                    <input
-                                        type="email"
-                                        placeholder="Email Address"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-3 px-4 outline-none focus:border-neutral-500 transition-all placeholder:text-neutral-600 text-sm"
-                                        required
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <input
-                                        type="password"
-                                        placeholder="Password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-3 px-4 outline-none focus:border-neutral-500 transition-all placeholder:text-neutral-600 text-sm"
-                                        required
-                                        minLength={6}
-                                    />
-                                </div>
+                            <div className="space-y-6">
                                 <button
-                                    type="submit"
+                                    onClick={handleGoogleLogin}
                                     disabled={loading}
-                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center"
+                                    className="relative w-full group overflow-hidden bg-white text-black hover:bg-neutral-100 transition-all duration-300 font-bold py-4 px-6 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-4 shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95"
                                 >
-                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (authMode === "signin" ? "Sign In" : "Sign Up")}
+                                    {loading ? (
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : (
+                                        <>
+                                            <svg className="w-5 h-5" viewBox="0 0 24 24">
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                                />
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                                />
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                                />
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                                />
+                                            </svg>
+                                            <span className="tracking-wide">Sign in with Google</span>
+                                        </>
+                                    )}
                                 </button>
-                            </form>
 
-                            {/* Divider */}
-                            <div className="relative mb-6">
-                                <div className="absolute inset-0 flex items-center">
-                                    <div className="w-full border-t border-neutral-800"></div>
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase">
-                                    <span className="bg-[#0a0a0a] px-2 text-neutral-500">Or continue with</span>
+                                <div className="text-center pt-4">
+                                    <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-600 font-mono">
+                                        End-to-end encrypted // Secure Access
+                                    </p>
                                 </div>
                             </div>
-
-
-                            <button
-                                onClick={handleGoogleLogin}
-                                disabled={loading}
-                                className="w-full flex items-center justify-center gap-3 bg-white text-black hover:bg-neutral-200 transition-colors font-medium py-3 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed group text-sm"
-                            >
-                                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                                    <path
-                                        fill="currentColor"
-                                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                                    />
-                                    <path
-                                        fill="currentColor"
-                                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                                    />
-                                    <path
-                                        fill="currentColor"
-                                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                                    />
-                                    <path
-                                        fill="currentColor"
-                                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                                    />
-                                </svg>
-                                <span>Google</span>
-                            </button>
-
-                            <div className="mt-6 text-center text-sm">
-                                <span className="text-neutral-500">
-                                    {authMode === "signin" ? "Don't have an account?" : "Already have an account?"}
-                                </span>
-                                <button
-                                    onClick={() => setAuthMode(authMode === "signin" ? "signup" : "signin")}
-                                    className="ml-2 text-white hover:underline font-medium"
-                                >
-                                    {authMode === "signin" ? "Sign Up" : "Sign In"}
-                                </button>
-                            </div>
-
                         </motion.div>
                     )}
 
@@ -334,89 +220,95 @@ function AuthContent() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -20 }}
-                            transition={{ duration: 0.4, ease: "easeOut" }}
-                            className="bg-neutral-900/50 backdrop-blur-xl border border-neutral-800 p-8 rounded-2xl shadow-2xl"
+                            transition={{ duration: 0.6, ease: "easeOut" }}
+                            className="bg-neutral-900/40 backdrop-blur-2xl border border-white/5 p-10 rounded-3xl shadow-2xl relative"
                         >
+                            <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-600/10 rounded-full blur-[80px]" />
+
                             <div className="text-center mb-8">
-                                <h1 className="font-display text-2xl font-bold mb-2">Complete Profile</h1>
-                                <p className="text-neutral-400 text-sm mb-6">Add your socials to connect with others.</p>
+                                <h1 className="font-display text-3xl font-bold mb-2 tracking-tight line-clamp-1">
+                                    Match Identity
+                                </h1>
+                                <p className="text-neutral-400 text-sm tracking-wide">
+                                    Finalize your agent profile
+                                </p>
 
                                 {user && (
-                                    <div className="flex items-center gap-4 bg-neutral-800/30 p-3 rounded-xl border border-neutral-800 mb-6 text-left">
-                                        {user.photoURL && <img src={user.photoURL} alt="User" className="w-10 h-10 rounded-full" />}
-                                        <div className="flex-1">
-                                            <div className="text-white font-bold text-sm">{user.displayName}</div>
-                                            <div className="text-neutral-500 text-xs">{user.email}</div>
+                                    <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/5 mt-8 text-left">
+                                        <div className="relative">
+                                            {user.photoURL && <img src={user.photoURL} alt="User" className="w-12 h-12 rounded-full border border-white/10" />}
+                                            <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-0.5 border border-black">
+                                                <CheckCircle2 className="w-3 h-3 text-white" />
+                                            </div>
                                         </div>
-                                        <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                        <div className="flex-1 overflow-hidden">
+                                            <div className="text-white font-bold text-sm truncate">{user.displayName}</div>
+                                            <div className="text-neutral-500 text-[10px] font-mono truncate">{user.email}</div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
 
-                            <form onSubmit={handleRegistration} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest ml-1">Instagram</label>
+                            <form onSubmit={handleRegistration} className="space-y-5">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">Instagram Handle</label>
                                     <div className="relative group">
-                                        <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 group-focus-within:text-white transition-colors" />
+                                        <Instagram className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 group-focus-within:text-white transition-colors" />
                                         <input
                                             type="text"
-                                            placeholder="username"
+                                            placeholder="@username"
                                             value={instagram}
                                             onChange={(e) => setInstagram(e.target.value)}
-                                            className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-2.5 pl-9 pr-4 text-sm outline-none focus:border-neutral-500 focus:bg-neutral-800 transition-all placeholder:text-neutral-600"
+                                            className="w-full bg-white/5 border border-white/5 rounded-2xl py-3.5 pl-11 pr-4 text-sm outline-none focus:border-white/20 focus:bg-white/10 transition-all placeholder:text-neutral-700"
                                         />
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest ml-1">LinkedIn</label>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1">LinkedIn Profile</label>
                                     <div className="relative group">
-                                        <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 group-focus-within:text-white transition-colors" />
+                                        <Linkedin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500 group-focus-within:text-white transition-colors" />
                                         <input
                                             type="text"
-                                            placeholder="Profile URL"
+                                            placeholder="linkedin.com/in/..."
                                             value={linkedin}
                                             onChange={(e) => setLinkedin(e.target.value)}
-                                            className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-2.5 pl-9 pr-4 text-sm outline-none focus:border-neutral-500 focus:bg-neutral-800 transition-all placeholder:text-neutral-600"
+                                            className="w-full bg-white/5 border border-white/5 rounded-2xl py-3.5 pl-11 pr-4 text-sm outline-none focus:border-white/20 focus:bg-white/10 transition-all placeholder:text-neutral-700"
                                         />
                                     </div>
                                 </div>
 
-                                {/* Filter Selection */}
-                                <div className="pt-2 border-t border-neutral-800 mt-4">
-                                    <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest ml-1 mb-2 block">I belong to...</label>
+                                <div className="pt-4 border-t border-white/5 mt-4">
+                                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest ml-1 mb-3 block">Deployment Sector</label>
                                     <select
                                         value={filter}
                                         onChange={(e) => setFilter(e.target.value)}
-                                        className="w-full bg-neutral-800/50 border border-neutral-700/50 rounded-xl py-2.5 px-3 text-sm outline-none focus:border-neutral-500 focus:bg-neutral-800 transition-all text-neutral-300"
+                                        className="w-full bg-white/5 border border-white/5 rounded-2xl py-3.5 px-4 text-sm outline-none focus:border-white/20 focus:bg-white/10 transition-all text-neutral-300 appearance-none"
                                     >
-                                        <option value="random">🎲 Random Match (Default)</option>
-                                        <optgroup label="🏫 Colleges">
+                                        <option value="random">🎲 Global Sector (Random)</option>
+                                        <optgroup label="Colleges">
                                             <option value="iit">IIT</option>
                                             <option value="nit">NIT</option>
                                             <option value="vit">VIT</option>
                                             <option value="bits">BITS</option>
                                         </optgroup>
-                                        <optgroup label="🏙 Cities">
+                                        <optgroup label="Metros">
                                             <option value="mumbai">Mumbai</option>
                                             <option value="pune">Pune</option>
                                             <option value="bangalore">Bangalore</option>
                                             <option value="delhi">Delhi</option>
                                         </optgroup>
-                                        <optgroup label="🏢 Companies">
+                                        <optgroup label="Industrial">
                                             <option value="tcs">TCS</option>
                                             <option value="infosys">Infosys</option>
                                             <option value="wipro">Wipro</option>
                                             <option value="startup">Startup</option>
                                         </optgroup>
                                     </select>
-                                    <p className="text-[10px] text-neutral-600 mt-1.5 ml-1">
-                                        We'll try to match you with people from this group first.
-                                    </p>
                                 </div>
 
                                 {error && (
-                                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs text-center">
+                                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] text-center uppercase tracking-widest">
                                         {error}
                                     </div>
                                 )}
@@ -424,18 +316,26 @@ function AuthContent() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full bg-white text-black hover:bg-neutral-200 font-bold py-3 px-6 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-4"
+                                    className="w-full bg-white text-black hover:bg-neutral-100 font-black py-4 px-6 rounded-2xl disabled:opacity-50 transition-all flex items-center justify-center gap-3 mt-4 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.05)]"
                                 >
-                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Complete Setup <ArrowRight className="w-4 h-4" /></>}
+                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>COMPLETE UPLINK <ArrowRight className="w-4 h-4" /></>}
                                 </button>
                             </form>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Bottom Info Bar for continuity */}
+            <div className="absolute bottom-12 flex items-center gap-8 text-[9px] font-mono uppercase tracking-[0.3em] text-neutral-700">
+                <span>Latency: 12ms</span>
+                <span className="hidden sm:inline">Auth: Firebase_SSO</span>
+                <span>Ver 2.1.0</span>
+            </div>
         </div>
     );
 }
+
 
 export default function AuthPage() {
     return (

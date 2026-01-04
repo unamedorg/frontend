@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useWebSocket } from '@/providers/WebSocketProvider';
 import { useTimer } from '@/providers/TimerProvider';
 import { CampusRadar } from '@/components/matchmaking/CampusRadar';
+import { ScanningInfo } from '@/components/matchmaking/ScanningInfo';
 import { AlertCircle } from 'lucide-react';
 
 type MatchState = 'idle' | 'searching' | 'matched' | 'timeout' | 'error';
@@ -121,13 +122,14 @@ export function MatchmakingEngine({ onMatchFound, collegeId = "global", autoStar
 
     if (status === 'searching') {
         return (
-            <div className="flex flex-col items-center justify-center h-full w-full">
-                <CampusRadar mode={searchMode} />
-                <p className="mt-8 font-mono text-sm text-white/50 animate-pulse">
-                    SCANNING_{searchMode.toUpperCase()}...
-                </p>
+            <div className="flex flex-col items-center justify-center h-full w-full relative">
+                <div className="relative">
+                    <CampusRadar mode={searchMode} />
+                    <ScanningInfo mode={activeCollegeId} />
+                </div>
+
                 {retryCount > 2 && (
-                    <p className="mt-2 text-[10px] text-amber-500/50 font-mono">
+                    <p className="mt-24 text-[10px] text-amber-500/50 font-mono absolute bottom-20">
                         Slow connection reported. Optimizing tunnel...
                     </p>
                 )}

@@ -16,18 +16,18 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "EchoArena | Project Social",
+  title: "Connectree | The Short Debate Chat",
   description: "Next-Gen Flash Interaction Platform",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "EchoArena",
+    title: "Connectree",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#050a18",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -42,6 +42,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
+      <head>
+        <link rel="preconnect" href="https://apis.google.com" />
+        <link rel="dns-prefetch" href="https://apis.google.com" />
+        <link rel="preconnect" href="https://www.gstatic.com" />
+        <link rel="dns-prefetch" href="https://www.gstatic.com" />
+      </head>
       <body
         className={`${outfit.variable} ${inter.variable} antialiased bg-black text-white`}
       >

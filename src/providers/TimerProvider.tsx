@@ -13,7 +13,7 @@ interface TimerContextType {
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
 
-const DURATION = 180; // 3 minutes
+const DURATION = 270; // 4 minutes 30 seconds
 
 export function TimerProvider({ children }: { children: React.ReactNode }) {
     const [timeRemaining, setTimeRemaining] = useState(DURATION);
