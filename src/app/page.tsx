@@ -117,18 +117,15 @@ export default function Home() {
   const [isPressing, setIsPressing] = useState(false);
   const HOLD_DURATION = 1500; // ms - Increased for more deliberate hold
 
-  // If loading auth state
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-void-dark flex items-center justify-center">
-        <Loader2 className="w-6 h-6 text-white animate-spin" />
-      </div>
-    );
-  }
+  // Handle Redirection in Effect to avoid 'Update while rendering' warning
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/auth');
+    }
+  }, [user, loading, router]);
 
-  // If not logged in, redirect to auth 
-  if (!user) {
-    router.push('/auth');
+  // If loading auth state
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-void-dark flex items-center justify-center">
         <Loader2 className="w-6 h-6 text-white animate-spin" />

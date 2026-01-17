@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050a18;
+  --background: #02040a;
   --foreground: #ffffff;
   --color-primary: #ffffff;
   --color-secondary: #333333;
@@ -28,7 +28,7 @@
   --font-body: var(--font-inter), sans-serif;
 
   /* Landing Page Palette & Animations */
-  --color-void-dark: #050a18;
+  --color-void-dark: #02040a;
   /* Updated to Deep Cosmic Blue */
   --color-void-blue: #0a0a1a;
   --color-star-white: #fffbf0;

@@ -24,13 +24,23 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Connectree",
   },
+  icons: {
+    icon: [
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
   other: {
-    "apple-touch-icon": "/icon.png",
+    "apple-touch-icon": "/apple-touch-icon.png",
   }
 };
 
 export const viewport: Viewport = {
-  themeColor: "#050a18",
+  themeColor: "#02040a",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -46,13 +56,16 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="preconnect" href="https://apis.google.com" />
         <link rel="dns-prefetch" href="https://apis.google.com" />
         <link rel="preconnect" href="https://www.gstatic.com" />
         <link rel="dns-prefetch" href="https://www.gstatic.com" />
       </head>
       <body
-        className={`${outfit.variable} ${inter.variable} antialiased bg-[#050a18] text-white`}
+        className={`${outfit.variable} ${inter.variable} antialiased bg-[#02040a] text-white`}
       >
         <Providers>
           {children}
