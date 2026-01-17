@@ -24,6 +24,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Connectree",
   },
+  other: {
+    "apple-touch-icon": "/icon.png",
+  }
 };
 
 export const viewport: Viewport = {
@@ -49,11 +52,26 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://www.gstatic.com" />
       </head>
       <body
-        className={`${outfit.variable} ${inter.variable} antialiased bg-black text-white`}
+        className={`${outfit.variable} ${inter.variable} antialiased bg-[#050a18] text-white`}
       >
         <Providers>
           {children}
         </Providers>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(function(registration) {
+                    console.log('SW registered');
+                  }, function(err) {
+                    console.log('SW failed: ', err);
+                  });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
