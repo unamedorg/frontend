@@ -1,9 +1,9 @@
-# EchoArena | Project Social
+# Connectree | Project Social
 
-> **Next-Gen Flash Interaction Platform**
+> **Next-Gen Flash Debate Platform**
 > *4 Min 30 Sec. Pure Connection. Zero Noise.*
 
-EchoArena is a high-fidelity, polished, and rapid social interaction platform built with **Next.js 15+** and **Tailwind CSS**. It focuses on ephemeral, gamified chat sessions with a sleek, OLED-optimized dark aesthetic.
+EchoArena is a high-fidelity, polished, and rapid social interaction platform built with **Next.js 16+** and **Tailwind CSS**. It focuses on ephemeral, gamified chat sessions with a sleek, OLED-optimized dark aesthetic.
 
 ---
 
