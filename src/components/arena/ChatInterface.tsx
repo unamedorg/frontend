@@ -9,6 +9,7 @@ interface Message {
     text: string;
     gifUrl?: string;
     sender: 'me' | 'partner' | 'system';
+    username?: string;
     timestamp: number;
     reaction?: string;
 }
@@ -16,6 +17,7 @@ interface Message {
 interface ChatInterfaceProps {
     matchData: wsResponse | null;
     onTimeout?: () => void;
+    initialMessages?: Message[];
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +72,13 @@ const MessageBubble = memo(({
                 onTouchEnd={onTouchEnd}
                 onContextMenu={(e) => onContextMenu(e, msg.id)}
             >
+                {/* Username Display for Group Contexts */}
+                {!isMe && !isSystem && msg.username && (
+                    <span className="text-[10px] text-neutral-500 ml-3 mb-1 block font-mono tracking-wide opacity-70">
+                        {msg.username}
+                    </span>
+                )}
+
                 {/* Reaction Overlay (Hover/Hold) */}
                 <div className={`reaction-overlay absolute -top-10 ${isMe ? 'right-0' : 'left-0'} flex gap-1 p-1.5 bg-neutral-900/90 backdrop-blur-md rounded-full border border-white/10 transition-all duration-200 shadow-xl z-20 ${isActive ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-90 pointer-events-none group-hover:opacity-100 group-hover:scale-100 group-hover:pointer-events-auto'}`}>
                     {['👍', '❤️', '😂', '😮', '🔥'].map(emoji => (
@@ -129,9 +138,27 @@ const MessageBubble = memo(({
 // ---------------------------------------------------------------------------
 // MAIN CHAT INTERFACE
 // ---------------------------------------------------------------------------
-function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
-    const { sendMessage, lastMessage, sessionId } = useWebSocket();
-    const [messages, setMessages] = useState<Message[]>([]);
+function ChatInterfaceBase({ matchData, onTimeout, initialMessages }: ChatInterfaceProps) {
+    const { sendMessage, lastMessage, sessionId, dummyName } = useWebSocket();
+    const [messages, setMessages] = useState<Message[]>(initialMessages || []);
+
+    // Update messages when initialMessages changes (e.g. loaded from fetch)
+    useEffect(() => {
+        if (initialMessages && initialMessages.length > 0) {
+            setMessages(prev => {
+                const existingIds = new Set(prev.map(m => m.id));
+                const uniqueNew = initialMessages.filter(m => {
+                    if (existingIds.has(m.id)) return false;
+                    // Content-based check to prevent live-vs-history duplicates
+                    return !prev.some(p => p.text === m.text && Math.abs(p.timestamp - m.timestamp) < 5000 && p.sender === m.sender);
+                });
+
+                if (uniqueNew.length === 0) return prev;
+                return [...prev, ...uniqueNew].sort((a, b) => a.timestamp - b.timestamp);
+            });
+        }
+    }, [initialMessages]);
+
     const [inputText, setInputText] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -218,7 +245,10 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
         const isPriority = lastMsg?.sender === 'me' || lastMsg?.sender === 'system';
 
         if (isNearBottom || isPriority) {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            // Small timeout to ensure DOM has painted the new bubble height
+            setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, 50);
         }
     }, [messages]);
 
@@ -226,14 +256,77 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
     useEffect(() => {
         if (!lastMessage) return;
 
+        // 1. Process Chat Messages
         if (lastMessage.type === 'message') {
-            setMessages(prev => [...prev, {
-                id: lastMessage.id || Math.random().toString(36).substr(2, 9),
-                text: lastMessage.text || "",
-                gifUrl: lastMessage.gifUrl,
-                sender: 'partner',
-                timestamp: lastMessage.timestamp || Date.now()
-            }]);
+            const rawSender = (lastMessage as any).sender || (lastMessage as any).sendername || (lastMessage as any).dummyname;
+            const isMe = rawSender === dummyName ||
+                rawSender === 'me' ||
+                (rawSender === sessionId && sessionId !== "guest") ||
+                rawSender === decodeURIComponent(dummyName); // Handle potential encoding mismatches
+
+            console.log("📨 ChatInterface Receiving:", { msg: (lastMessage as any).message, rawSender, isMe, myDummy: dummyName });
+
+
+            setMessages(prev => {
+                const text = (lastMessage as any).message || (lastMessage as any).text;
+                let timestamp = Date.now();
+                try {
+                    const ts = (lastMessage as any).timestamp;
+                    if (ts) {
+                        const parsed = new Date(ts).getTime();
+                        if (!isNaN(parsed)) timestamp = parsed;
+                    }
+                } catch (e) { }
+
+                // 🛑 Duplicate Check Strategy:
+                // 1. If 'isMe' (My Echo): Strict check. Filter if we already have it (Optimistic match).
+                // 2. If 'partner': Permissive. Only filter if we literally just added it (very tight window).
+
+                const isDuplicate = prev.some(m => {
+                    // Content and Sender must match
+                    if (m.text !== text) return false;
+                    const sameSender = m.sender === (isMe ? 'me' : 'partner');
+                    if (!sameSender) return false;
+
+                    // Time window
+                    const diff = Math.abs(m.timestamp - timestamp);
+
+                    if (isMe) return diff < 10000; // 10s window for my echoes
+                    return diff < 500; // 0.5s window for partner (double-send prevention only)
+                });
+
+                if (isDuplicate) {
+                    console.log("🧹 Filtered duplicate/echo:", text);
+                    return prev;
+                }
+
+                console.log("✅ Adding new message:", text, isMe ? 'me' : 'partner');
+
+                return [...prev, {
+                    id: (lastMessage as any).id || `msg-${Date.now()}-${Math.random()}`,
+                    text: text || "",
+                    gifUrl: (lastMessage as any).gifurl || (lastMessage as any).gifUrl,
+                    sender: isMe ? 'me' : 'partner',
+                    username: (lastMessage as any).sendername || (lastMessage as any).dummyname || (lastMessage as any).sender || "Anonymous",
+                    timestamp: timestamp
+                }];
+            });
+        }
+
+        // 2. Process System Messages
+        if (lastMessage.type === 'system') {
+            const text = (lastMessage as any).message || (lastMessage as any).text;
+            setMessages(prev => {
+                const exists = prev.some(m => m.sender === 'system' && m.text === text && Math.abs(m.timestamp - Date.now()) < 5000);
+                if (exists) return prev;
+
+                return [...prev, {
+                    id: `sys-${Date.now()}`,
+                    text: text || "",
+                    sender: 'system',
+                    timestamp: Date.now()
+                }];
+            });
         }
 
         if (lastMessage.type === 'signal' && lastMessage.subtype === 'reaction') {
@@ -284,20 +377,24 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
         resetInactivityTimer();
 
         const messageId = crypto.randomUUID();
+        const text = inputText;
+        const timestamp = Date.now();
 
+        // 🚀 OPTIMISTIC UPDATE: Show immediately
         setMessages(prev => [...prev, {
             id: messageId,
-            text: inputText,
+            text: text,
             sender: 'me',
-            timestamp: Date.now()
+            username: 'me',
+            timestamp: timestamp
         }]);
 
         sendMessage({
             type: 'message',
             id: messageId,
             username: 'me',
-            text: inputText,
-            timestamp: Date.now()
+            text: text,
+            timestamp: timestamp
         });
 
         setInputText("");
@@ -315,13 +412,16 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
         resetInactivityTimer();
 
         const messageId = crypto.randomUUID();
+        const timestamp = Date.now();
 
+        // 🚀 OPTIMISTIC UPDATE for GIF
         setMessages(prev => [...prev, {
             id: messageId,
             text: "GIF",
             gifUrl: gifUrl,
             sender: 'me',
-            timestamp: Date.now()
+            username: 'me',
+            timestamp: timestamp
         }]);
 
         sendMessage({
@@ -330,7 +430,7 @@ function ChatInterfaceBase({ matchData, onTimeout }: ChatInterfaceProps) {
             username: 'me',
             text: "GIF",
             gifUrl: gifUrl,
-            timestamp: Date.now()
+            timestamp: timestamp
         });
     }, [sendMessage, resetInactivityTimer]);
 

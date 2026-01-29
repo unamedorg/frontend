@@ -5,7 +5,7 @@ import { wsMessage, wsResponse, WebSocketContextType } from '@/types/socket';
 import { config } from '@/lib/config';
 import { useAuth } from '@/providers/AuthProvider';
 
-const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
+export const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
 
 const MAX_RECONNECT_DELAY = 5000;
 const HEARTBEAT_INTERVAL = 30000;
@@ -15,6 +15,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const [isConnected, setIsConnected] = useState(false);
     const [lastMessage, setLastMessage] = useState<wsResponse | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [dummyName, setDummyName] = useState<string>("");
 
     const ws = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -22,9 +23,9 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const isExplicitDisconnect = useRef(false);
 
     // Ref to hold the current connect function to avoid dependency cycles in effects
-    const connectRef = useRef<() => void>(() => { });
+    const connectRef = useRef<(overrideUrl?: string) => void>(() => { });
 
-    const connect = useCallback(async () => {
+    const connect = useCallback(async (overrideUrl?: string) => {
         isExplicitDisconnect.current = false;
 
         // specific check to avoid redundant connections
@@ -47,9 +48,14 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             const uniqueId = user.uid;
 
             // Construct URL
-            const url = config.getWsUrl(uniqueId);
-            const filter = localStorage.getItem("arena_filter") || "random";
-            const finalUrl = `${url}&token=${token}&filter=${filter}`;
+            let finalUrl = "";
+            if (overrideUrl) {
+                finalUrl = overrideUrl;
+            } else {
+                const url = config.getWsUrl(uniqueId);
+                const filter = localStorage.getItem("arena_filter") || "random";
+                finalUrl = `${url}&token=${token}&filter=${filter}`;
+            }
 
             console.log("🔌 Connecting to EchoArena...");
 
@@ -65,6 +71,23 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
             ws.current.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
+
+                    // ADAPTER: Unwrap debatrooms message envelope if valid JSON inside
+                    if (data.type === 'message' && typeof data.message === 'string') {
+                        try {
+                            const inner = JSON.parse(data.message);
+                            if (inner && inner.type) {
+                                // Preserve authentic sender and timestamp from backend
+                                inner.sender = data.sender || inner.sender;
+                                inner.timestamp = data.timestamp || inner.timestamp;
+                                setLastMessage(inner);
+                                return;
+                            }
+                        } catch (e) {
+                            // Not JSON, treat as standard text message 
+                        }
+                    }
+
                     // Filter out internal messages or handle 'ready' specifically if needed
                     if ((data as any).message === "ready") {
                         // Keep alive / ready signal
@@ -127,13 +150,34 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         setLastMessage(null);
     }, []);
 
-    const sendMessage = useCallback((msg: wsMessage) => {
+    const sendMessage = useCallback((msg: wsMessage | string) => {
         if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify(msg));
+            if (typeof msg === 'string') {
+                ws.current.send(msg);
+            } else {
+                ws.current.send(JSON.stringify(msg));
+            }
         } else {
             console.warn('⚠️ Cannot send: WS not connected');
         }
     }, []);
+
+    const connectToRoom = useCallback((roomId: string, name: string) => {
+        if (!user) return;
+        setDummyName(name);
+
+        // Derive backend URL
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const host = window.location.hostname === 'localhost' ? 'localhost:8080' : window.location.host;
+        const debateUrl = `${protocol}://${host}/debate/join?roomid=${roomId}&uid=${user.uid}&dummyname=${name}`;
+
+        console.log("🔀 Switching to Debate Room:", debateUrl);
+        disconnect();
+        // Small delay to ensure clean socket close before new one
+        setTimeout(() => {
+            connect(debateUrl);
+        }, 100);
+    }, [connect, disconnect, user]);
 
     // Keep connectRef up to date
     useEffect(() => {
@@ -198,7 +242,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     const tabId = useRef(Math.random().toString(36).substring(7)).current;
 
     return (
-        <WebSocketContext.Provider value={{ isConnected, sendMessage, lastMessage, connect, disconnect, sessionId, tabId }}>
+        <WebSocketContext.Provider value={{ isConnected, sendMessage, lastMessage, connect, disconnect, sessionId, tabId, dummyName, connectToRoom }}>
             {children}
         </WebSocketContext.Provider>
     );

@@ -37,10 +37,17 @@ const FACTS: Record<string, string[]> = {
         "Consistency is key: Top 1% of users hold 50% of the karma.",
         "Competitive conversation sharpens your wit.",
         "You are entering the arena of elite communicators."
+    ],
+    debate: [
+        "A great debate is where everyone leaves with more than they came with.",
+        "Logic is the art of going wrong with confidence.",
+        "To argue with a person who has renounced use of reason is like administering medicine to the dead.",
+        "The aim of argument, or of discussion, should not be victory, but progress."
     ]
 };
 
 const getCategory = (mode: string) => {
+    if (mode === 'debate') return 'debate';
     if (mode === 'random' || mode === 'blitz') return 'random';
     if (mode === 'ranked') return 'ranked';
     if (mode.startsWith('iit_') || mode === 'college' || mode.includes('university')) return 'college';
@@ -50,6 +57,7 @@ const getCategory = (mode: string) => {
 };
 
 const getReadableMode = (mode: string) => {
+    if (mode === 'debate') return 'Really Great Debate';
     if (mode === 'iit_bombay') return 'IIT Bombay';
     if (mode === 'iit_delhi') return 'IIT Delhi';
     if (mode === 'random' || mode === 'blitz') return 'Random Vibe';
@@ -96,7 +104,7 @@ export function ScanningInfo({ mode }: ScanningInfoProps) {
                         className="flex flex-col items-center"
                     >
                         <span className="text-white/60 font-display text-sm tracking-wider uppercase mb-1">
-                            Connecting with someone in...
+                            {mode === 'debate' ? 'Connecting with someone for a...' : 'Connecting with someone in...'}
                         </span>
                         <span className="text-vibe font-display font-bold text-lg tracking-widest uppercase drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
                             {readableMode}

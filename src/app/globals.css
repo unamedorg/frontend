@@ -77,22 +77,20 @@ body {
 
 /* Custom Scrollbar for sleekness */
 ::-webkit-scrollbar {
-  width: 10px;
+  width: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #000;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #666;
-  border-radius: 5px;
-  border: 2px solid #000;
-  /* Padding around thumb */
+  background: #333;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #888;
+  background: #555;
 }
 
 @keyframes shimmer {
