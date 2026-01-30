@@ -188,7 +188,7 @@ export function DebateEntry() {
     };
 
     return (
-        <div className="flex flex-col md:flex-row w-full max-w-7xl mx-auto h-[100dvh] md:h-full flex-1 gap-3 md:gap-12 px-4 md:px-6 relative overflow-hidden md:overflow-visible">
+        <div className="flex flex-col md:flex-row w-full max-w-7xl mx-auto h-[100dvh] md:h-full flex-1 gap-3 md:gap-12 px-4 md:px-6 relative overflow-hidden">
 
             {/* --- MODALS --- */}
             <AnimatePresence>
@@ -370,7 +370,7 @@ export function DebateEntry() {
             </AnimatePresence>
 
             {/* --- LEFT SIDE: ROOM LIST (Always visible on Debate page) --- */}
-            <div className="flex flex-[0.65] md:flex-1 flex-col h-[65dvh] md:h-full min-h-0 max-w-md md:max-w-none mx-auto w-full bg-[#0a0a1a]/60 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-xl relative group shadow-2xl transition-all duration-300">
+            <div className="flex flex-col h-[55dvh] md:h-[75dvh] min-h-0 max-w-md md:max-w-none mx-auto w-full bg-[#0a0a1a]/60 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-xl relative group shadow-2xl transition-all duration-300">
                 {/* Header */}
                 <div className="p-6 border-b border-white/5 flex items-center justify-between bg-[#0a0a0a]/50 backdrop-blur-xl z-10 relative overflow-hidden">
                     {/* Subtle top gloss */}
@@ -492,7 +492,7 @@ export function DebateEntry() {
 
 
             {/* --- RIGHT SIDE: INTERACTION (Bottom on mobile, Side on desktop) --- */}
-            <div className="flex-1 md:flex-1 flex flex-col items-center justify-center relative -mt-32 md:mt-0 py-2 md:py-0">
+            <div className="flex-shrink-0 h-[40dvh] md:h-auto md:flex-1 flex flex-col items-center justify-center relative -mt-10 md:mt-0 py-2 md:py-0">
 
                 {showModes ? (
                     /* --- MODE SELECTION --- */
